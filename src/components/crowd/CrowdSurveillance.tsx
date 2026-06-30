@@ -1,0 +1,489 @@
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { apiClient, type CrowdAnalysis } from '@/lib/api';
+import { cacheGet, cacheSet } from '@/lib/persistentCache';
+import { SmoothImg } from '@/components/ui/smooth-img';
+import { Users, Gauge, Radio, TrendingUp, ChevronDown, Activity, Flame, Clock, Camera } from 'lucide-react';
+import { getTodayStartIST } from '@/lib/dateUtils';
+
+// Crowd-surveillance dashboard for our deployment (head-detection cameras: Channel2/4 + Cam-50).
+// Self-contained + untracked so a friend's git reset can't revert it. Driven only by
+// getCrowdAnalysis (head rows) + getAllLiveFrames — NOT the temple footfall/flow logic.
+
+type Row = { t: number; cam: string; people: number; cum: number; url: string | null; density: string };
+type TimeRange = '1H' | '24H' | '7D';
+const RANGE_HOURS: Record<TimeRange, number> = { '1H': 1, '24H': 24, '7D': 168 };
+const AREA_CAPACITY = 80;
+const istHM = (ms: number) => new Date(ms).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' });
+// round a max up to a clean axis value (so Y labels read 0 / 3500 / 7000 …)
+const niceCeil = (v: number) => { if (v <= 4) return 4; const p = Math.pow(10, Math.floor(Math.log10(v / 4))); const s = [1, 1.5, 2, 2.5, 5, 10].map(x => x * p).find(x => x * 4 >= v) || 10 * p; return s * 4; };
+// Catmull-Rom → cubic-bézier: a smooth curve through the points (like the reference chart)
+const smoothPath = (pts: [number, number][]) => {
+  if (pts.length < 2) return pts.length ? `M${pts[0][0].toFixed(2)},${pts[0][1].toFixed(2)}` : '';
+  let d = `M${pts[0][0].toFixed(2)},${pts[0][1].toFixed(2)}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+    const c1x = p1[0] + (p2[0] - p0[0]) / 6, c1y = p1[1] + (p2[1] - p0[1]) / 6;
+    const c2x = p2[0] - (p3[0] - p1[0]) / 6, c2y = p2[1] - (p3[1] - p1[1]) / 6;
+    d += ` C${c1x.toFixed(2)},${c1y.toFixed(2)} ${c2x.toFixed(2)},${c2y.toFixed(2)} ${p2[0].toFixed(2)},${p2[1].toFixed(2)}`;
+  }
+  return d;
+};
+// Head-count tiers for the per-camera chip + Peak Hours / Overview (Heavy 15 / Busy 8 / Moderate 3 / Light).
+const HEAD_TIERS = [
+  { key: 'Heavy',    min: 15, color: '#ef4444', label: 'Heavy (15+)' },
+  { key: 'Busy',     min: 8,  color: '#f59e0b', label: 'Busy (8+)' },
+  { key: 'Moderate', min: 3,  color: '#eab308', label: 'Moderate (3+)' },
+  { key: 'Light',    min: 0,  color: '#22c55e', label: 'Light' },
+];
+const headTier = (n: number) => HEAD_TIERS.find(t => n >= t.min) || HEAD_TIERS[HEAD_TIERS.length - 1];
+const densityColor = (n: number) => headTier(n).color;
+const densityLabel = (n: number) => headTier(n).key;
+
+export function CrowdSurveillance() {
+  // Seed rows from the reload-surviving cache (key = range+cam) so the page
+  // repaints instantly on re-open / F5, then revalidates.
+  const crowdKey = (r: string, c: string) => `crowd:${r}:${c}`;
+  const seed = cacheGet<Row[]>(crowdKey('24H', 'ALL'));
+  const [rows, setRows] = useState<Row[]>(seed?.data ?? []);
+  const [liveFrames, setLiveFrames] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(!seed);
+  const [range, setRange] = useState<TimeRange>('24H');
+  const [selectedCam, setSelectedCam] = useState<string>('ALL');
+  const [camList, setCamList] = useState<string[]>([]);
+  const [camOpen, setCamOpen] = useState(false);
+  // Frame URLs that 404'd (pruned/stale uploads) — drop their cards instead of
+  // leaving black tiles behind.
+  const [deadUrls, setDeadUrls] = useState<Set<string>>(new Set());
+  const markDead = useCallback((u: string) => setDeadUrls(p => (p.has(u) ? p : new Set(p).add(u))), []);
+  // Full rolling-24h hourly footfall, fetched as 24 small per-hour samples (the raw
+  // table is ~3k rows/hour — too many to pull whole — so we sample each hour cheaply).
+  const [trend24, setTrend24] = useState<{ k: number; n: number }[]>([]);
+  const [lightbox, setLightbox] = useState<string | null>(null);
+
+  const inFlight = useRef(false);
+  const loadRows = useCallback(async () => {
+    if (inFlight.current) return; // skip a poll while one is still running
+    inFlight.current = true;
+    try {
+      const res = await apiClient.getCrowdAnalysis({
+        // Demo site (~2 days of data): no time filter — show everything.
+        // Most-recent 6k rows (handler orders timestamp DESC).
+        limit: 6000, light: true,
+        ...(selectedCam !== 'ALL' ? { deviceId: selectedCam } : {}),
+      });
+      const mapped: Row[] = (res || []).map((a: CrowdAnalysis) => ({
+        t: new Date(a.timestamp).getTime(),
+        cam: a.deviceId,
+        people: a.peopleCount ?? 0,
+        cum: (a as any).cumulativeCount ?? 0,
+        url: a.frameUrl ?? null,
+        density: a.densityLevel ?? 'LOW',
+      })).filter(r => !isNaN(r.t)).sort((a, b) => a.t - b.t);
+      // Only keep cameras with FRESH data (active in the last 30 min) so stale /
+      // dummy cameras (e.g. an old test feed) never show — only live RTSP cams.
+      const FRESH_MS = 30 * 60 * 1000, nowMs = Date.now();
+      const freshCams = new Set(mapped.filter(r => nowMs - r.t < FRESH_MS).map(r => r.cam));
+      const fresh = freshCams.size ? mapped.filter(r => freshCams.has(r.cam)) : mapped;
+      setRows(fresh);
+      cacheSet(crowdKey(range, selectedCam), fresh);
+      if (selectedCam === 'ALL') {
+        const cams = Array.from(new Set(fresh.map(r => r.cam))).filter(Boolean);
+        if (cams.length) setCamList(cams);
+      }
+    } catch { /* keep last */ } finally { inFlight.current = false; setLoading(false); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCam, range]);
+
+  const loadFrames = useCallback(async () => { try { setLiveFrames(await apiClient.getAllLiveFrames()); } catch { /* */ } }, []);
+
+  // Single server-aggregated hourly trend (replaces 24 parallel raw fetches).
+  const loadTrend = useCallback(async () => {
+    try {
+      const res = await apiClient.getCrowdTrend({
+        // demo: widen past the rolling 24h so the full ~2-day footfall shows
+        startTime: new Date(Date.now() - 72 * 3_600_000).toISOString(),
+        granularity: 'hour',
+        ...(selectedCam !== 'ALL' ? { deviceId: selectedCam } : {}),
+      });
+      setTrend24((res || [])
+        .map((d) => ({ k: new Date(d.period).getTime(), n: d.maxPeople ?? 0 }))
+        .filter((d) => !isNaN(d.k))
+        .sort((a, b) => a.k - b.k));
+    } catch { /* keep last */ }
+  }, [selectedCam]);
+
+  useEffect(() => {
+    const c = cacheGet<Row[]>(crowdKey(range, selectedCam));
+    if (c) { setRows(c.data); setLoading(false); } else setLoading(true);
+    loadRows();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadRows]);
+  useEffect(() => { const id = setInterval(loadRows, 30000); return () => clearInterval(id); }, [loadRows]);
+  useEffect(() => { loadFrames(); const id = setInterval(loadFrames, 1200); return () => clearInterval(id); }, [loadFrames]);
+  // Defer the 24-request trend burst so it doesn't starve the initial rows fetch
+  // (and the main content paints first).
+  useEffect(() => {
+    const t = setTimeout(loadTrend, 1500);
+    const id = setInterval(loadTrend, 120000);
+    return () => { clearTimeout(t); clearInterval(id); };
+  }, [loadTrend]);
+
+  // ── per-camera aggregation ──────────────────────────────────────────────
+  const perCam = useMemo(() => {
+    const m: Record<string, { latest: Row; maxCum: number; maxPeople: number }> = {};
+    for (const r of rows) {
+      const e = m[r.cam];
+      if (!e) m[r.cam] = { latest: r, maxCum: r.cum, maxPeople: r.people };
+      else { if (r.t >= e.latest.t) e.latest = r; if (r.cum > e.maxCum) e.maxCum = r.cum; if (r.people > e.maxPeople) e.maxPeople = r.people; }
+    }
+    return m;
+  }, [rows]);
+
+  const cams = useMemo(() => Object.entries(perCam)
+    .map(([cam, v]) => ({ cam, live: v.latest.people, density: v.latest.people, url: liveFrames[cam] ?? v.latest.url, peak: v.maxPeople }))
+    .sort((a, b) => b.live - a.live), [perCam, liveFrames]);
+
+  const totalCrowd = useMemo(() => Object.values(perCam).reduce((s, v) => s + v.maxCum, 0), [perCam]);
+  const peopleInView = useMemo(() => cams.reduce((s, c) => s + c.live, 0), [cams]);
+  const activeCams = cams.filter(c => c.live > 0).length;
+  const avgInView = activeCams ? Math.round(peopleInView / activeCams) : 0;
+  const capPct = Math.min(100, Math.round((peopleInView / AREA_CAPACITY) * 100));
+
+  // Peak Hours — busiest hours-of-day by peak head count (IST).
+  const hourPeaks = useMemo(() => {
+    const m: Record<number, number> = {};
+    for (const r of rows) {
+      const h = parseInt(new Date(r.t).toLocaleString('en-IN', { hour: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' }), 10);
+      if (!isNaN(h)) m[h] = Math.max(m[h] ?? 0, r.people);
+    }
+    return m;
+  }, [rows]);
+  const peakHours = useMemo(() => Object.entries(hourPeaks)
+    .map(([h, n]) => ({ h: +h, n })).sort((a, b) => b.n - a.n).slice(0, 3), [hourPeaks]);
+
+  // Overview — tier distribution across active hours + Avg / Peak / Cameras.
+  const overview = useMemo(() => {
+    const tierCount: Record<string, number> = {};
+    Object.values(hourPeaks).forEach(n => { const k = headTier(n).key; tierCount[k] = (tierCount[k] ?? 0) + 1; });
+    const totalHours = Object.keys(hourPeaks).length || 1;
+    const avg = rows.length ? Math.round(rows.reduce((s, r) => s + r.people, 0) / rows.length) : 0;
+    const peak = Math.max(0, ...rows.map(r => r.people));
+    const camCount = new Set(rows.map(r => r.cam)).size;
+    return { tierCount, totalHours, avg, peak, camCount };
+  }, [hourPeaks, rows]);
+
+  const trend = useMemo(() => {
+    if (!rows.length) return [] as { k: number; n: number }[];
+    const bucketMs = range === '1H' ? 5 * 60000 : range === '24H' ? 3600000 : 86400000;
+    const m: Record<number, number> = {};
+    for (const r of rows) { const k = Math.floor(r.t / bucketMs) * bucketMs; m[k] = Math.max(m[k] ?? 0, r.people); }
+    return Object.entries(m).map(([k, n]) => ({ k: +k, n })).sort((a, b) => a.k - b.k);
+  }, [rows, range]);
+  const trendMax = Math.max(1, ...trend.map(d => d.n));
+
+  // Footfall Trend series: prefer the server-aggregated hourly trend, but fall
+  // back to the locally-bucketed series from `rows` when the trend/footfall
+  // aggregation endpoint returns empty (so the chart never shows blank while
+  // raw analysis rows exist).
+  const footfallSeries = trend24.length > 0 ? trend24 : trend;
+
+  const peakMoments = useMemo(() => rows.filter(r => r.url && r.people > 0 && !deadUrls.has(r.url!))
+    .filter((r, i, arr) => arr.findIndex(x => x.url === r.url) === i)
+    .sort((a, b) => b.people - a.people).slice(0, 10), [rows, deadUrls]);
+
+  // Fallback when no frames survive (all pruned/never stored): top moments by
+  // count alone, rendered as compact count-only cards.
+  const peakCountOnly = useMemo(() => rows.filter(r => r.people > 0)
+    .sort((a, b) => b.people - a.people).slice(0, 10), [rows]);
+
+  const srcFor = (u: string | null) => (!u ? null : u.startsWith('data:') || u.startsWith('http') ? u : u);
+
+  const initialLoading = loading && !rows.length;
+
+  return (
+    <div className="h-full w-full flex overflow-hidden bg-zinc-950 text-zinc-100">
+      {/* ── Main ───────────────────────────────────────────────────────────── */}
+      <div className="flex-1 min-w-0 overflow-y-auto scroll-on-hover">
+        {/* Top progress bar while the first batch of data is loading. */}
+        {initialLoading && (
+          <div className="sticky top-0 z-40 h-0.5 w-full bg-amber-500/15 overflow-hidden">
+            <div className="h-full w-2/5 bg-amber-400 animate-pulse" />
+          </div>
+        )}
+        <div className="p-5 space-y-5">
+
+          {/* Header */}
+          <div className="rounded-2xl border border-white/10 relative bg-card z-30">
+            <div className="absolute inset-0 rounded-2xl overflow-hidden opacity-[0.06] pointer-events-none" style={{ backgroundImage: 'repeating-linear-gradient(45deg,#f59e0b 0 1px,transparent 1px 14px)' }} />
+            <div className="relative px-5 py-3 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-lg bg-amber-600/20 border border-amber-500/40 flex items-center justify-center shrink-0">
+                  <Users className="w-5 h-5 text-amber-300" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[9px] font-semibold text-amber-300/80 uppercase tracking-[0.2em]">IRIS Command Center · {selectedCam === 'ALL' ? 'All Cameras' : selectedCam}</p>
+                  <h1 className="text-sm font-bold text-white tracking-tight truncate">Crowd Surveillance</h1>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                <div className="hidden sm:flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-amber-300/90">
+                  <span className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" /><span className="relative inline-flex rounded-full h-2 w-2 bg-amber-400" /></span>
+                  {initialLoading ? 'Syncing…' : 'Live'}
+                </div>
+                <div className="relative">
+                  <button onClick={() => setCamOpen(o => !o)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold rounded-lg bg-zinc-900/80 border border-amber-500/30 text-amber-200 hover:border-amber-500/60 transition-all">
+                    <Users className="w-3 h-3" />
+                    <span className="max-w-[120px] truncate">{selectedCam === 'ALL' ? 'All Cameras' : selectedCam}</span>
+                    <ChevronDown className={`w-3 h-3 transition-transform ${camOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {camOpen && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setCamOpen(false)} />
+                      <div className="absolute right-0 mt-1.5 z-50 min-w-[170px] rounded-lg bg-zinc-900 border border-amber-500/30 shadow-xl shadow-black/60 py-1 max-h-72 overflow-y-auto">
+                        {['ALL', ...camList].map(cam => (
+                          <button key={cam} onClick={() => { setSelectedCam(cam); setCamOpen(false); }}
+                            className={`w-full text-left px-3 py-1.5 text-[11px] font-medium flex items-center gap-2 transition-colors ${selectedCam === cam ? 'bg-amber-500/15 text-amber-300' : 'text-zinc-300 hover:bg-zinc-800'}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${selectedCam === cam ? 'bg-amber-400' : 'bg-zinc-600'}`} />
+                            {cam === 'ALL' ? 'All Cameras' : cam}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+                <div className="flex gap-1 bg-zinc-900/80 border border-amber-500/20 rounded-lg p-0.5">
+                  {(['1H', '24H', '7D'] as TimeRange[]).map(r => (
+                    <button key={r} onClick={() => setRange(r)}
+                      className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${range === r ? 'bg-amber-500/20 text-amber-200 border border-amber-500/40' : 'text-zinc-500 hover:text-zinc-300 border border-transparent'}`}>
+                      {r}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* KPIs */}
+          <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+            <Kpi label="Total Crowd" value={totalCrowd.toLocaleString()} sub="distinct people today" icon={<Users className="w-5 h-5" />} gradient="from-amber-500/20 to-amber-500/5" border="border-amber-500/30" glow="rgba(245,158,11,0.18)" text="text-amber-200" />
+            <Kpi label="People in View" value={peopleInView.toString()} sub={`${activeCams}/${cams.length} cameras live`} icon={<Radio className="w-5 h-5" />} gradient="from-emerald-500/20 to-emerald-500/5" border="border-emerald-500/30" glow="rgba(16,185,129,0.15)" text="text-emerald-300" />
+            <Kpi label="Area Capacity" value={`${capPct}%`} sub={`${peopleInView}/${AREA_CAPACITY} occupancy`} icon={<Gauge className="w-5 h-5" />} gradient="from-amber-500/20 to-amber-500/5" border="border-amber-500/30" glow="rgba(245,158,11,0.15)" text="text-amber-300" />
+            <Kpi label="Avg in View" value={avgInView.toString()} sub="across cameras" icon={<Activity className="w-5 h-5" />} gradient="from-violet-500/20 to-violet-500/5" border="border-violet-500/30" glow="rgba(168,85,247,0.15)" text="text-violet-300" />
+          </div>
+
+          {/* Peak Hours + Overview */}
+          <div className="rounded-2xl border border-white/8 bg-zinc-900/60 backdrop-blur-sm overflow-hidden">
+            <div className="px-5 pt-4 pb-3 border-b border-white/5 flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-amber-500/10"><Clock className="w-4 h-4 text-amber-300" /></div>
+              <p className="text-sm font-semibold text-zinc-100">Peak Hours & Overview · {range}</p>
+            </div>
+            <div className="p-4 grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-4">
+              {/* Left column — busiest hours */}
+              <div>
+                <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-[0.2em] mb-3">Peak Hours · {range}</p>
+                {peakHours.length === 0 ? (
+                  <div className="text-sm text-zinc-600 py-4 text-center">Collecting crowd data…</div>
+                ) : (
+                  <div className="space-y-1">
+                    {peakHours.map((ph, i) => {
+                      const tier = headTier(ph.n);
+                      return (
+                        <div key={ph.h} className="flex items-center gap-3 px-2 py-1.5 rounded-lg hover:bg-zinc-800/40 transition-colors">
+                          <span className="text-[11px] font-bold text-zinc-500 w-4 tabular-nums">{i + 1}</span>
+                          <span className="text-sm font-semibold text-zinc-200 tabular-nums w-14">{String(ph.h).padStart(2, '0')}:00</span>
+                          <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded" style={{ color: tier.color, background: `${tier.color}1f` }}>{tier.key}</span>
+                          <span className="flex-1" />
+                          <span className="text-base font-black tabular-nums" style={{ color: tier.color }}>{ph.n}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Right column — Overview (tier distribution + stats) */}
+              <div className="lg:border-l lg:border-white/5 lg:pl-6">
+                <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-[0.2em] mb-3">Overview · {range}</p>
+                <div className="space-y-1.5">
+                  {HEAD_TIERS.filter(t => (overview.tierCount[t.key] ?? 0) > 0).map(t => {
+                    const c = overview.tierCount[t.key] ?? 0;
+                    const pct = Math.round((c / overview.totalHours) * 100);
+                    return (
+                      <div key={t.key} className="flex items-center gap-2 text-[11px]">
+                        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: t.color }} />
+                        <span className="text-zinc-300 flex-1">{t.label}</span>
+                        <span className="text-zinc-200 font-semibold tabular-nums">{c}</span>
+                        <span className="text-zinc-600 tabular-nums w-8 text-right">{pct}%</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="grid grid-cols-3 gap-2 mt-4 pt-3 border-t border-white/5 text-center">
+                  <div><div className="text-2xl font-black tabular-nums text-zinc-100">{overview.avg}</div><div className="text-[9px] text-zinc-600 uppercase tracking-wider">Avg Crowd</div></div>
+                  <div><div className="text-2xl font-black tabular-nums text-amber-300">{overview.peak}</div><div className="text-[9px] text-zinc-600 uppercase tracking-wider">Peak</div></div>
+                  <div><div className="text-2xl font-black tabular-nums text-zinc-100">{overview.camCount}</div><div className="text-[9px] text-zinc-600 uppercase tracking-wider">Cameras</div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Busiest cameras — live frames */}
+          <div className="rounded-2xl border border-amber-500/15 bg-zinc-900/60 backdrop-blur-sm overflow-hidden">
+            <div className="px-5 pt-4 pb-3 border-b border-white/5 flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-amber-500/10"><Radio className="w-4 h-4 text-amber-300" /></div>
+              <p className="text-sm font-semibold text-zinc-100">Cameras · Live</p>
+            </div>
+            <div className="p-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+              {cams.length === 0 ? <div className="col-span-full text-sm text-zinc-600 py-6 text-center">No cameras reporting.</div> :
+                cams.map((c, i) => {
+                  const src = srcFor(c.url);
+                  return (
+                    <div key={c.cam} className="rounded-xl border border-white/10 bg-zinc-800/30 overflow-hidden">
+                      <div className="relative aspect-video bg-zinc-900">
+                        {src ? <LiveCanvas src={src} className="absolute inset-0 w-full h-full object-cover cursor-zoom-in" onClick={() => setLightbox(src)} /> : <div className="w-full h-full flex items-center justify-center text-zinc-700"><Users className="w-8 h-8 opacity-30" /></div>}
+                        <span className="absolute top-1.5 left-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded bg-black/60 text-amber-300">#{i + 1}</span>
+                        <span className="absolute top-1.5 right-1.5 text-[10px] font-black px-2 py-0.5 rounded-full text-white" style={{ background: densityColor(c.live) }}>{c.live}</span>
+                      </div>
+                      <div className="px-3 py-2 flex items-center justify-between">
+                        <span className="text-xs font-semibold text-zinc-200 truncate">{c.cam}</span>
+                        <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded" style={{ color: densityColor(c.live), background: `${densityColor(c.live)}1f` }}>{densityLabel(c.live)}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+
+          {/* Trend */}
+          <div className="rounded-2xl border border-white/8 bg-zinc-900/60 backdrop-blur-sm overflow-hidden">
+            <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-white/5">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-amber-500/10"><TrendingUp className="w-4 h-4 text-amber-300" /></div>
+                <div><p className="text-sm font-semibold text-zinc-100">Crowd Footfall Trend · {selectedCam === 'ALL' ? 'All Cameras' : selectedCam}</p><p className="text-[10px] text-zinc-500">Peak crowd per hour · last 24h</p></div>
+              </div>
+              <span className="text-[10px] text-zinc-400 bg-zinc-800 rounded-full px-2.5 py-1 font-mono">24H</span>
+            </div>
+            <div className="p-5 pr-6">
+              {footfallSeries.length > 0 ? (() => {
+                const n = footfallSeries.length;
+                const top = niceCeil(Math.max(1, ...footfallSeries.map(d => d.n)));
+                const px = (i: number) => (n <= 1 ? 0 : (i / (n - 1)) * 100);
+                const py = (v: number) => (1 - v / top) * 100;
+                const pts = footfallSeries.map((d, i) => [px(i), py(d.n)] as [number, number]);
+                const line = smoothPath(pts);
+                const area = `${line} L${pts[n - 1][0].toFixed(2)},100 L${pts[0][0].toFixed(2)},100 Z`;
+                const yLabels = [4, 3, 2, 1, 0].map(i => (top * i) / 4); // top → bottom
+                const step = Math.max(1, Math.ceil(n / 12));
+                return (
+                  <div>
+                    <div className="flex" style={{ height: 300 }}>
+                      <div className="w-12 shrink-0 flex flex-col justify-between text-right pr-2.5 text-[10px] text-zinc-500 tabular-nums">
+                        {yLabels.map(v => <span key={v}>{Math.round(v).toLocaleString()}</span>)}
+                      </div>
+                      <div className="flex-1 relative">
+                        <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full">
+                          <defs><linearGradient id="crowdGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#f59e0b" stopOpacity={0.3} /><stop offset="100%" stopColor="#f59e0b" stopOpacity={0.01} /></linearGradient></defs>
+                          {yLabels.map(v => { const y = py(v); return <line key={v} x1="0" y1={y} x2="100" y2={y} stroke="rgba(255,255,255,0.07)" strokeWidth="0.25" strokeDasharray="1.5 2" />; })}
+                          <path d={area} fill="url(#crowdGrad)" />
+                          <path d={line} fill="none" stroke="#f59e0b" strokeWidth="2.4" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
+                        </svg>
+                      </div>
+                    </div>
+                    <div className="flex mt-2">
+                      <div className="w-12 shrink-0" />
+                      <div className="flex-1 flex justify-between text-[10px] text-zinc-600 tabular-nums">
+                        {footfallSeries.map((d, i) => (i % step === 0 || i === n - 1) ? <span key={i}>{istHM(d.k)}</span> : null)}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })() : <div className="h-[300px] flex items-center justify-center text-sm text-zinc-600">Collecting crowd data…</div>}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Right sidebar: Peak Moments ────────────────────────────────────── */}
+      <div className="w-[300px] shrink-0 border-l border-white/5 bg-zinc-900/50 flex flex-col overflow-hidden">
+        <div className="p-4 border-b border-white/5 flex items-center gap-2">
+          <div className="p-1.5 rounded-lg bg-amber-500/10"><Flame className="w-3.5 h-3.5 text-amber-400" /></div>
+          <div><p className="text-sm font-semibold text-zinc-100">Peak Moments</p><p className="text-[10px] text-zinc-500">Highest crowd, high → low</p></div>
+        </div>
+        <div className="flex-1 overflow-y-auto scroll-on-hover p-3 space-y-3">
+          {peakMoments.length === 0 && peakCountOnly.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full gap-3 text-zinc-700">
+              <Flame className="w-8 h-8 opacity-30" />
+              <p className="text-sm text-zinc-500">No peaks captured yet</p>
+            </div>
+          ) : peakMoments.length === 0 ? (
+            // No frames survived (pruned/never stored) — compact count-only cards.
+            peakCountOnly.map((r, i) => (
+              <div key={`${r.cam}-${r.t}-${i}`} className="rounded-xl border border-white/10 bg-zinc-800/30 px-3 py-2 flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-zinc-900 grid place-items-center text-zinc-600 shrink-0"><Camera className="w-4 h-4" /></div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold text-zinc-200 truncate">{r.cam}</p>
+                  <p className="text-[10px] text-zinc-500 tabular-nums">{istHM(r.t)}</p>
+                </div>
+                <span className="text-sm font-black px-2 py-0.5 rounded-full text-white shrink-0" style={{ background: densityColor(r.people) }}>{r.people}</span>
+              </div>
+            ))
+          ) : peakMoments.map((r, i) => {
+            const src = srcFor(r.url);
+            return (
+              <div key={`${r.url}-${i}`} className="rounded-xl border border-white/10 bg-zinc-800/30 overflow-hidden">
+                <div className="relative aspect-video bg-zinc-900">
+                  {src ? <img src={src} alt="peak" className="w-full h-full object-cover cursor-zoom-in" onClick={() => setLightbox(src)} onError={() => markDead(r.url!)} /> : null}
+                  <span className="absolute top-1.5 left-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded bg-black/60 text-amber-300">#{i + 1}</span>
+                  <span className="absolute bottom-1.5 right-1.5 text-sm font-black px-2 py-0.5 rounded-full text-white" style={{ background: densityColor(r.people) }}>{r.people}</span>
+                </div>
+                <div className="px-3 py-1.5 flex items-center justify-between text-[10px]">
+                  <span className="text-zinc-300 font-medium truncate">{r.cam}</span>
+                  <span className="text-zinc-500 tabular-nums">{istHM(r.t)}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      {lightbox && (
+        <div className="fixed inset-0 z-[400] bg-black/85 backdrop-blur-sm flex items-center justify-center p-6" onClick={() => setLightbox(null)}>
+          <img src={lightbox} alt="enlarged" className="max-w-[92vw] max-h-[88vh] rounded-xl border border-white/10 shadow-2xl object-contain" onClick={(e) => e.stopPropagation()} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LiveCanvas({ src, className, onClick }: { src: string; className?: string; onClick?: () => void }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    if (!src) return;
+    let cancelled = false;
+    const img = new Image();
+    img.onload = () => {
+      if (cancelled) return;
+      const c = ref.current; if (!c) return;
+      if (c.width !== img.naturalWidth || c.height !== img.naturalHeight) { c.width = img.naturalWidth; c.height = img.naturalHeight; }
+      const ctx = c.getContext('2d'); if (ctx) ctx.drawImage(img, 0, 0);
+    };
+    img.src = src;
+    return () => { cancelled = true; };
+  }, [src]);
+  return <canvas ref={ref} className={className} onClick={onClick} />;
+}
+
+function Kpi({ label, value, sub, icon, gradient, border, glow, text }: { label: string; value: string; sub: string; icon: React.ReactNode; gradient: string; border: string; glow: string; text: string }) {
+  return (
+    <div className={`relative rounded-2xl border ${border} bg-gradient-to-b ${gradient} p-4 overflow-hidden`} style={{ boxShadow: `0 0 24px ${glow}` }}>
+      <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'repeating-linear-gradient(0deg,#fff 0,#fff 1px,transparent 0,transparent 50%),repeating-linear-gradient(90deg,#fff 0,#fff 1px,transparent 0,transparent 50%)', backgroundSize: '24px 24px' }} />
+      <div className="relative">
+        <div className={`flex items-center gap-1.5 mb-3 ${text} opacity-80`}>{icon}<span className="text-[10px] font-semibold uppercase tracking-widest">{label}</span></div>
+        <p className={`text-3xl font-black tracking-tight tabular-nums ${text}`}>{value}</p>
+        <p className="text-[10px] text-zinc-600 mt-1 font-medium">{sub}</p>
+      </div>
+    </div>
+  );
+}
+
+export default CrowdSurveillance;

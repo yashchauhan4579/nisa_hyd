@@ -1,0 +1,173 @@
+/* ============================================================================
+   Light-mode compatibility layer for the dark-first vendored fork UIs
+   (_sringeri crowd/FRS/analytics, _irisdrone VMS/violations).
+
+   Those forks hardcode zinc/black Tailwind utilities (bg-zinc-950, bg-zinc-900,
+   bg-black, text-white, border-white/10, ...) instead of theme tokens, so their
+   main content area stays dark regardless of the theme selector. Rather than
+   editing 100+ vendored files, we remap that fixed dark vocabulary to light
+   surfaces *only in light mode*.
+
+   Selectors use [class~="token"] (exact whitespace-separated token match) so a
+   rule for "bg-zinc-900" does NOT also hit "hover:bg-zinc-900" — variant states
+   keep working. Loaded after index.css (unlayered) so it wins over Tailwind's
+   layered utilities. Dark mode (html.dark) is untouched.
+   ============================================================================ */
+
+:root:not(.dark) {
+  /* shared light values, reused below */
+  --compat-surface: #ffffff;
+  --compat-surface-2: #f8fafc;     /* slate-50  */
+  --compat-veil: rgba(15, 23, 42, 0.04);
+  --compat-ink: #1e293b;           /* slate-800 */
+  --compat-muted: #64748b;         /* slate-500 */
+  --compat-line: rgba(15, 23, 42, 0.12);
+}
+
+/* ---- dark surfaces -> light surfaces ------------------------------------ */
+:root:not(.dark) [class~="bg-zinc-950"],
+:root:not(.dark) [class~="bg-zinc-900"],
+:root:not(.dark) [class~="bg-zinc-900/30"],
+:root:not(.dark) [class~="bg-zinc-900/40"],
+:root:not(.dark) [class~="bg-zinc-900/50"],
+:root:not(.dark) [class~="bg-zinc-900/60"],
+:root:not(.dark) [class~="bg-zinc-900/80"],
+:root:not(.dark) [class~="bg-zinc-900/90"],
+:root:not(.dark) [class~="bg-neutral-900"],
+:root:not(.dark) [class~="bg-slate-900"],
+:root:not(.dark) [class~="bg-slate-950"],
+:root:not(.dark) [class~="bg-gray-900"],
+:root:not(.dark) [class~="bg-gray-950"] {
+  background-color: var(--compat-surface) !important;
+}
+
+:root:not(.dark) [class~="bg-zinc-800"],
+:root:not(.dark) [class~="bg-zinc-800/40"],
+:root:not(.dark) [class~="bg-zinc-800/50"],
+:root:not(.dark) [class~="bg-zinc-800/60"],
+:root:not(.dark) [class~="bg-zinc-700"],
+:root:not(.dark) [class~="bg-neutral-800"],
+:root:not(.dark) [class~="bg-slate-800"],
+:root:not(.dark) [class~="bg-gray-800"] {
+  background-color: var(--compat-surface-2) !important;
+}
+
+/* near-black backdrops + their alpha variants */
+:root:not(.dark) [class~="bg-black"],
+:root:not(.dark) [class~="bg-black/20"],
+:root:not(.dark) [class~="bg-black/30"],
+:root:not(.dark) [class~="bg-black/40"],
+:root:not(.dark) [class~="bg-black/50"],
+:root:not(.dark) [class~="bg-black/60"],
+:root:not(.dark) [class~="bg-black/70"],
+:root:not(.dark) [class~="bg-black/80"],
+:root:not(.dark) [class~="bg-black/90"] {
+  background-color: var(--compat-surface-2) !important;
+}
+
+/* translucent white veils (elevation on dark) -> faint dark veils on light */
+:root:not(.dark) [class~="bg-white/5"],
+:root:not(.dark) [class~="bg-white/10"],
+:root:not(.dark) [class~="bg-white/20"] {
+  background-color: var(--compat-veil) !important;
+}
+
+/* ---- text ---------------------------------------------------------------- */
+:root:not(.dark) [class~="text-white"],
+:root:not(.dark) [class~="text-white/80"],
+:root:not(.dark) [class~="text-white/90"],
+:root:not(.dark) [class~="text-zinc-100"],
+:root:not(.dark) [class~="text-zinc-200"],
+:root:not(.dark) [class~="text-zinc-300"] {
+  color: var(--compat-ink) !important;
+}
+
+/* muted text that is too light on white -> readable slate */
+:root:not(.dark) [class~="text-zinc-400"],
+:root:not(.dark) [class~="text-zinc-500"],
+:root:not(.dark) [class~="text-gray-400"],
+:root:not(.dark) [class~="text-neutral-400"] {
+  color: var(--compat-muted) !important;
+}
+
+/* ---- borders ------------------------------------------------------------- */
+:root:not(.dark) [class~="border-white"],
+:root:not(.dark) [class~="border-white/5"],
+:root:not(.dark) [class~="border-white/8"],
+:root:not(.dark) [class~="border-white/10"],
+:root:not(.dark) [class~="border-white/20"],
+:root:not(.dark) [class~="border-zinc-700"],
+:root:not(.dark) [class~="border-zinc-800"],
+:root:not(.dark) [class~="border-zinc-900"] {
+  border-color: var(--compat-line) !important;
+}
+
+/* ---- form controls: stay light in light mode ------------------------------
+   Some inputs pick up a dark themed background (tactical theme / autofill);
+   force them light. External !important also beats non-important inline bg. */
+:root:not(.dark) input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+:root:not(.dark) textarea,
+:root:not(.dark) select {
+  background-color: var(--compat-surface) !important;
+  color: var(--compat-ink) !important;
+  border-color: var(--compat-line) !important;
+}
+:root:not(.dark) input::placeholder,
+:root:not(.dark) textarea::placeholder {
+  color: var(--compat-muted) !important;
+}
+
+/* ---- dark inline/utility card surfaces (e.g. fork camera tiles that set
+   `background: rgba(15,15,20,.8)` inline). Match the neutral-bordered cards and
+   force a light surface; external !important overrides the inline value. ------ */
+:root:not(.dark) [class*="border-zinc-7"],
+:root:not(.dark) [class*="border-zinc-8"],
+:root:not(.dark) [class*="border-zinc-9"] {
+  background-color: var(--compat-surface) !important;
+}
+
+/* ---- dark gradient scrims (e.g. `from-black/80` caption overlays) become a
+   dark strip over a now-light tile; neutralise the black gradient stops. ----- */
+:root:not(.dark) [class*="from-black"] { --tw-gradient-from: rgba(255,255,255,0) var(--tw-gradient-from-position, 0%) !important; }
+:root:not(.dark) [class*="via-black"]  { --tw-gradient-via: rgba(255,255,255,0) var(--tw-gradient-via-position, 50%) !important; }
+:root:not(.dark) [class*="to-black"]   { --tw-gradient-to: rgba(255,255,255,0) var(--tw-gradient-to-position, 100%) !important; }
+
+/* ---- light brand-coloured TEXT (300/400 tints designed for dark bg) read as
+   washed-out on light surfaces; deepen to a contrast-safe shade. Dashboards
+   built dark-first (crowd/FRS) use these heavily. ---------------------------- */
+:root:not(.dark) [class*="text-amber-2"],
+:root:not(.dark) [class*="text-amber-3"],
+:root:not(.dark) [class*="text-amber-4"],
+:root:not(.dark) [class*="text-yellow-2"],
+:root:not(.dark) [class*="text-yellow-3"],
+:root:not(.dark) [class*="text-yellow-4"],
+:root:not(.dark) [class*="text-orange-3"],
+:root:not(.dark) [class*="text-orange-4"] { color: #b45309 !important; }
+
+:root:not(.dark) [class*="text-emerald-3"],
+:root:not(.dark) [class*="text-emerald-4"],
+:root:not(.dark) [class*="text-green-3"],
+:root:not(.dark) [class*="text-green-4"],
+:root:not(.dark) [class*="text-teal-3"],
+:root:not(.dark) [class*="text-teal-4"] { color: #047857 !important; }
+
+:root:not(.dark) [class*="text-red-3"],
+:root:not(.dark) [class*="text-red-4"],
+:root:not(.dark) [class*="text-rose-3"],
+:root:not(.dark) [class*="text-rose-4"] { color: #dc2626 !important; }
+
+:root:not(.dark) [class*="text-blue-3"],
+:root:not(.dark) [class*="text-blue-4"],
+:root:not(.dark) [class*="text-sky-3"],
+:root:not(.dark) [class*="text-sky-4"],
+:root:not(.dark) [class*="text-cyan-3"],
+:root:not(.dark) [class*="text-cyan-4"],
+:root:not(.dark) [class*="text-indigo-3"],
+:root:not(.dark) [class*="text-indigo-4"] { color: #1d4ed8 !important; }
+
+:root:not(.dark) [class*="text-violet-3"],
+:root:not(.dark) [class*="text-violet-4"],
+:root:not(.dark) [class*="text-purple-3"],
+:root:not(.dark) [class*="text-purple-4"],
+:root:not(.dark) [class*="text-fuchsia-3"],
+:root:not(.dark) [class*="text-fuchsia-4"] { color: #7c3aed !important; }

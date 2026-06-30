@@ -1,0 +1,125 @@
+/* ═══════════════════════════════════════════════════════════
+   IRIS — Cyberpunk theme layer (electric violet #7C4DFF + neon pink #FF2D95)
+
+   Activated by ThemeContext putting `.theme-cyberpunk` on <html>, alongside
+   the existing `light`/`dark` classes. The default Amber theme is the ABSENCE
+   of this class — nothing in this file matches then, so Amber is untouched.
+
+   Strategy: variable remap, not rule overrides. Tailwind v4 emits
+   `var(--color-amber-400)` etc. for every amber utility, so redefining the
+   `--color-amber-*` ramp under `:root.theme-cyberpunk` re-points all ~939
+   amber usages at once. This file is imported LAST in main.tsx and is
+   unlayered, so it wins the cascade without any `!important`.
+   ═══════════════════════════════════════════════════════════ */
+
+/* ─── Brand indirection + amber ramp → electric violet ─── */
+:root.theme-cyberpunk {
+  --brand-accent: #7C4DFF;
+  --brand-accent-rgb: 124, 77, 255;
+  --brand-accent-2: #FF2D95;
+  --brand-accent-2-rgb: 255, 45, 149;
+  --color-amber-50:  #F1ECFF;
+  --color-amber-100: #E6DBFF;
+  --color-amber-200: #CFB8FF;
+  --color-amber-300: #B095FF;
+  --color-amber-400: #9A74FF;
+  --color-amber-500: #7C4DFF;
+  --color-amber-600: #6A35F0;
+  --color-amber-700: #5826C9;
+  --color-amber-800: #45209B;
+  --color-amber-900: #341B73;
+  --color-amber-950: #1E1147;
+}
+
+/* ─── shadcn tokens — Cyber-Light (mirrors :root block in index.css) ───
+   --radius is intentionally NOT redefined; it inherits from index.css. */
+:root.theme-cyberpunk {
+  --background: 222 40% 98%;
+  --foreground: 240 25% 10%;
+  --card: 0 0% 100%;
+  --card-foreground: 240 25% 10%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 240 25% 10%;
+  --primary: 256 100% 65%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 222 30% 94%;
+  --secondary-foreground: 240 25% 12%;
+  --muted: 222 30% 94%;
+  --muted-foreground: 230 12% 42%;
+  --accent: 330 100% 96%;
+  --accent-foreground: 330 80% 35%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 225 25% 87%;
+  --input: 225 25% 87%;
+  --ring: 256 100% 65%;
+}
+
+/* ─── shadcn tokens — Cyber-Dark (mirrors .dark block in index.css) ─── */
+:root.theme-cyberpunk.dark {
+  --background: 258 55% 4%;
+  --foreground: 240 30% 96%;
+  --card: 258 40% 7%;
+  --card-foreground: 240 30% 96%;
+  --popover: 258 40% 6%;
+  --popover-foreground: 240 30% 96%;
+  --primary: 256 100% 68%;
+  --primary-foreground: 256 60% 10%;
+  --secondary: 258 30% 13%;
+  --secondary-foreground: 240 30% 96%;
+  --muted: 258 30% 13%;
+  --muted-foreground: 240 15% 64%;
+  --accent: 330 70% 16%;
+  --accent-foreground: 330 100% 80%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 258 30% 16%;
+  --input: 258 30% 16%;
+  /* Pink focus ring — the one place accent-2 leads. */
+  --ring: 330 100% 59%;
+}
+
+/* ─── Tactical fork tokens (irisdrone tactical.css, loaded globally) ───
+   tactical.css points its "cyan" family at amber; re-point it at the blue
+   family. Only vars that exist in tactical.css are overridden here. */
+:root.theme-cyberpunk {
+  --tact-accent-rgb: 124, 77, 255;
+  --tact-cyan: #7C4DFF;
+  --tact-cyan-bright: #B095FF;
+  --tact-cyan-dim: #341B73;
+  --tact-border-bright: rgba(124, 77, 255, 0.4);
+}
+
+/* ─── Pink gradient stops ───
+   Gradient `to-*` utilities bake the hex into --tw-gradient-to rather than
+   referencing --color-amber-*, so they need targeted overrides. Selector
+   specificity (0,2,1) beats utility classes — no !important needed. */
+:root.theme-cyberpunk [class~="to-amber-600"]   { --tw-gradient-to: #FF2D95; }
+:root.theme-cyberpunk [class~="to-amber-400"]   { --tw-gradient-to: #FF6AB5; }
+:root.theme-cyberpunk [class~="to-amber-500/5"] { --tw-gradient-to: rgba(255, 45, 149, 0.05); }
+
+/* ─── Neon flourishes (CSS-only) ─── */
+:root.theme-cyberpunk [class~="bg-amber-500"],
+:root.theme-cyberpunk [class~="bg-amber-600"] {
+  box-shadow: 0 0 18px -4px rgba(124, 77, 255, 0.55);
+}
+:root.theme-cyberpunk [class~="hover:bg-amber-600"]:hover {
+  box-shadow: 0 0 24px -4px rgba(255, 45, 149, 0.45);
+}
+:root.theme-cyberpunk :is(input, textarea, select):focus-visible {
+  box-shadow: 0 0 0 1px rgba(124, 77, 255, 0.6), 0 0 14px rgba(124, 77, 255, 0.35);
+}
+/* subtle dark-only scanlines */
+:root.theme-cyberpunk.dark body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  background: repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.012) 0 1px, transparent 1px 3px);
+}
+
+/* ─── SVG chart hotspots (React presentation attributes) ─── */
+:root.theme-cyberpunk svg [stroke="#f59e0b"] { stroke: #7C4DFF; }
+:root.theme-cyberpunk svg [fill="#f59e0b"]   { fill: #7C4DFF; }
+:root.theme-cyberpunk svg [stop-color="#f59e0b"] { stop-color: #7C4DFF; }

@@ -1,0 +1,1 @@
+rtsp://admin:REDACTED@10.10.9.254:554/cam/realmonitor?channel=1&subtype=0

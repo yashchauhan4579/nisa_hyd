@@ -1,0 +1,65 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+.AppleDouble
+.LSOverride
+
+# Desktop shortcuts (NVIDIA Jetson)
+*.desktop
+
+# Data and output (exclude from git)
+output/
+uploads/
+data/*.db
+data/*.db-shm
+data/*.db-wal
+
+# Test files
+test_*.py
+*_test.py
+rtsp_quality_test/
+direct_stream_test/
+plate_crops_*/
+
+# Logs
+*.log
+
+# Model weights - Keep .pt, .pth, and .engine (TensorRT), exclude ONNX conversions
+weights/*.onnx
+weights/*_fp16.pth
+weights/*_int8.pth
+
+# Frontend artifacts (if any)
+node_modules/
+npm-debug.log
+yarn-error.log
+yarn.lock
+build/
+dist/
+.next/
+.cache/
+
+# Keep weights directory structure
+!weights/.gitkeep

@@ -1,0 +1,15 @@
+{
+  "frame_width": 3072,
+  "frame_height": 2048,
+  "radar_center_x": 1536,
+  "radar_center_y": 1400,
+  "horizontal_scale": 96.0,
+  "vertical_scale": 24.0,
+  "zone_top": 0,
+  "zone_bottom": 2048,
+  "zone_left": 0,
+  "zone_right": 3072,
+  "radar_min_distance": 2.0,
+  "radar_max_distance": 100.0,
+  "max_match_distance": 1000.0
+}

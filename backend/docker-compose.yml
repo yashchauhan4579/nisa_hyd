@@ -1,0 +1,93 @@
+services:
+  violation-pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: violation-pipeline:latest
+    container_name: violation-pipeline
+    runtime: nvidia
+    network_mode: host
+    ipc: host
+    volumes:
+      # Mount output directory for violation results
+      - ./output:/app/output
+      # Mount uploads directory for video files
+      - ./uploads:/app/uploads
+      # Mount data directory for database
+      - ./data:/app/data
+      # Mount weights (optional - for model updates)
+      - ./weights:/app/weights
+      # Mount pipeline for development (optional - remove in production)
+      - ./violation_pipeline:/app/violation_pipeline
+      # Mount radar modules (optional - for development)
+      - ./radar_interface.py:/app/radar_interface.py
+      - ./radar_camera_fusion.py:/app/radar_camera_fusion.py
+      - ./radar_calibration.json:/app/radar_calibration.json
+      # Mount the host's docker-entrypoint.sh over the (buggy in older images)
+      # in-container copy so every box picks up the worker/api dispatch fix
+      # without having to rebuild the image.
+      - ./docker-entrypoint.sh:/app/docker-entrypoint.sh:ro
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
+      - CUDA_VISIBLE_DEVICES=0
+      - PYTHONUNBUFFERED=1
+      - TZ=Asia/Kolkata
+      # Database path
+      - DB_PATH=/app/data/violation_pipeline.db
+      # Central server integration — this box reports to the .206 deployment, not Belagavi
+      - CENTRAL_SERVER_URL=http://10.10.0.206:3001
+      - WORKER_ID=REDACTED
+      - AUTH_TOKEN=REDACTED
+      - CENTRAL_SERVER_ENABLED=true
+      # Run mode: 'api' for API server (default), or set RTSP_URL for direct stream
+      - RUN_MODE=api
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  violation-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: violation-pipeline:latest
+    container_name: violation-worker
+    runtime: nvidia
+    network_mode: host
+    ipc: host
+    volumes:
+      - ./output:/app/output
+      - ./uploads:/app/uploads
+      - ./data:/app/data
+      - ./weights:/app/weights
+      - ./violation_pipeline:/app/violation_pipeline
+      - ./radar_interface.py:/app/radar_interface.py
+      - ./radar_camera_fusion.py:/app/radar_camera_fusion.py
+      - ./radar_calibration.json:/app/radar_calibration.json
+      # Mount the host's docker-entrypoint.sh over the (buggy in older images)
+      # in-container copy so every box picks up the worker/api dispatch fix
+      # without having to rebuild the image.
+      - ./docker-entrypoint.sh:/app/docker-entrypoint.sh:ro
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0
+      - PYTHONUNBUFFERED=1
+      - DB_PATH=/app/data/violation_pipeline.db
+      - CENTRAL_SERVER_URL=http://10.10.0.206:3001
+      - WORKER_ID=REDACTED
+      - AUTH_TOKEN=REDACTED
+      - CENTRAL_SERVER_ENABLED=true
+      - RUN_MODE=worker
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

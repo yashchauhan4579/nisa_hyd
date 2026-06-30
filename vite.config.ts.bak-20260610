@@ -1,0 +1,141 @@
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import path from 'path'
+
+// https://vite.dev/config/
+export default defineConfig({
+  plugins: [react()],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+      "@sringeri": path.resolve(__dirname, "./src/_sringeri"),
+      "@irisdrone": path.resolve(__dirname, "./src/_irisdrone"),
+    },
+  },
+  server: {
+    port: 1111,
+    proxy: {
+      // IRIS Copilot chatbot service (FastAPI on :8020)
+      '/copilot': {
+        target: 'http://localhost:8020',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/copilot/, ''),
+      },
+      // Forensics crowd-AI sidecar (irisv3) at :8000
+      '/forensicsapi': {
+        target: 'http://localhost:8010',
+        changeOrigin: true,
+        secure: false,
+        ws: true,
+        rewrite: (path) => path.replace(/^\/forensicsapi/, ''),
+      },
+      // CLIP search sidecar (Phase 5) runs on the host GPU at :8200
+      '/searchapi': {
+        target: 'http://localhost:8200',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/searchapi/, ''),
+      },
+      '/api': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+        secure: false,
+      },
+      // Violation/event evidence images (frame.jpg snapshots) the backend writes
+      // to /root/itms/data and serves at /uploads/... — without this the SPA
+      // fallback answers and every violation thumbnail 404s as index.html.
+      '/uploads': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+        secure: false,
+      },
+      '/heatmaps': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+        secure: false,
+      },
+      '/ws/feeds': {
+        target: 'http://localhost:3001',
+        ws: true,
+        changeOrigin: true,
+        secure: false,
+      },
+      '/media': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/media/, ''),
+      },
+      '/webrtc': {
+        target: 'http://localhost:8889',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/webrtc/, ''),
+      },
+    },
+  },
+  preview: {
+    port: 1111,
+    proxy: {
+      // IRIS Copilot chatbot service (FastAPI on :8020)
+      '/copilot': {
+        target: 'http://localhost:8020',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/copilot/, ''),
+      },
+      // Forensics crowd-AI sidecar (irisv3) — FastAPI on :8000
+      '/forensicsapi': {
+        target: 'http://localhost:8010',
+        changeOrigin: true,
+        secure: false,
+        ws: true,
+        rewrite: (path) => path.replace(/^\/forensicsapi/, ''),
+      },
+      // CLIP search sidecar (Phase 5) — FastAPI on :8200
+      '/searchapi': {
+        target: 'http://localhost:8200',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/searchapi/, ''),
+      },
+      '/api': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+        secure: false,
+      },
+      // Violation/event evidence images (frame.jpg snapshots) the backend writes
+      // to /root/itms/data and serves at /uploads/... — without this the SPA
+      // fallback answers and every violation thumbnail 404s as index.html.
+      '/uploads': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+        secure: false,
+      },
+      '/heatmaps': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+        secure: false,
+      },
+      '/ws/feeds': {
+        target: 'http://localhost:3001',
+        ws: true,
+        changeOrigin: true,
+        secure: false,
+      },
+      '/media': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/media/, ''),
+      },
+      '/webrtc': {
+        target: 'http://localhost:8889',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/webrtc/, ''),
+      },
+    },
+  },
+})

@@ -1,0 +1,119 @@
+/* White/black "MagicBox Hub"-style surface for the public Landing + Login pages.
+   Ported from mgicboxhub-v3/hub-main (light cream bg + grain + grid + drifting
+   boxes + black #0B1726 accents), de-branded for IRIS. */
+
+.mb-bg {
+  position: relative;
+  isolation: isolate;
+  /* Accent glows follow the brand (amber by default, electric blue in cyberpunk). */
+  background:
+    radial-gradient(1400px 900px at 18% 8%, rgba(var(--brand-accent-rgb, 245, 158, 11), 0.05), rgba(255, 255, 255, 0) 65%),
+    radial-gradient(1300px 850px at 88% 12%, rgba(var(--brand-accent-2-rgb, 245, 158, 11), 0.04), rgba(255, 255, 255, 0) 68%),
+    radial-gradient(1000px 750px at 50% 92%, rgba(0, 0, 0, 0.05), rgba(255, 255, 255, 0) 62%),
+    linear-gradient(180deg, #ECEBE7 0%, #F4F3F1 50%, #ECEBE7 100%);
+  color: #0B1726;
+}
+
+/* ── Dark mode ── */
+.dark .mb-bg {
+  background:
+    radial-gradient(1400px 900px at 18% 8%, rgba(var(--brand-accent-rgb, 245, 158, 11), 0.10), rgba(0, 0, 0, 0) 60%),
+    radial-gradient(1300px 850px at 88% 12%, rgba(var(--brand-accent-2-rgb, 245, 158, 11), 0.08), rgba(0, 0, 0, 0) 64%),
+    radial-gradient(1000px 750px at 50% 92%, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0) 62%),
+    linear-gradient(180deg, #060810 0%, #0b0e18 50%, #060810 100%);
+  color: #e5e7eb;
+}
+/* Cyberpunk dark — violet-black surface */
+:root.theme-cyberpunk.dark .mb-bg {
+  background:
+    radial-gradient(1400px 900px at 18% 8%, rgba(var(--brand-accent-rgb), 0.14), rgba(0, 0, 0, 0) 60%),
+    radial-gradient(1300px 850px at 88% 12%, rgba(var(--brand-accent-2-rgb), 0.12), rgba(0, 0, 0, 0) 64%),
+    linear-gradient(180deg, #070310 0%, #10071e 50%, #070310 100%);
+  color: #e6ecff;
+}
+.dark .mb-grain { mix-blend-mode: screen; opacity: 0.12; }
+.dark .mb-grid {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+}
+.dark .mb-box {
+  background: linear-gradient(145deg, #161a24 0%, #0d1019 100%);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+}
+:root.theme-cyberpunk.dark .mb-box {
+  background: linear-gradient(145deg, #1a0f2e 0%, #0d0618 100%);
+  border-color: rgba(var(--brand-accent-rgb), 0.18);
+}
+.dark .mb-box::after {
+  background: radial-gradient(circle at 35% 35%, rgba(var(--brand-accent-rgb, 245, 158, 11), 0.9) 0%, rgba(var(--brand-accent-rgb, 245, 158, 11), 0.4) 70%);
+  box-shadow: 0 0 8px rgba(var(--brand-accent-rgb, 245, 158, 11), 0.4);
+}
+
+.mb-grain {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.28;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)' opacity='.35'/%3E%3C/svg%3E");
+  background-size: 220px 220px;
+}
+
+.mb-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  opacity: 0.16;
+  background-image:
+    linear-gradient(to right, rgba(0, 0, 0, 0.10) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.10) 1px, transparent 1px);
+  background-size: 120px 120px;
+  -webkit-mask-image: radial-gradient(circle at 35% 15%, rgba(0, 0, 0, 1), rgba(0, 0, 0, 0) 58%);
+  mask-image: radial-gradient(circle at 35% 15%, rgba(0, 0, 0, 1), rgba(0, 0, 0, 0) 58%);
+}
+
+/* Drifting decorative boxes (simplified — frosted camera-like tiles, not MagicBox hardware) */
+.mb-float-layer { position: absolute; inset: 0; z-index: 4; pointer-events: none; overflow: hidden; }
+.mb-float {
+  position: absolute;
+  animation: mb-drift var(--dur, 16s) ease-in-out infinite;
+  animation-delay: var(--delay, 0s);
+  will-change: transform;
+}
+.mb-box {
+  width: 168px;
+  height: 104px;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #FBFAF8 0%, #E9E7E2 100%);
+  border: 1px solid rgba(11, 23, 38, 0.10);
+  box-shadow: 0 18px 40px rgba(11, 23, 38, 0.10);
+  position: relative;
+}
+.mb-box::after {
+  /* a small "lens" so the tile reads as a camera without explicit branding */
+  content: "";
+  position: absolute;
+  top: 14px; left: 14px;
+  width: 16px; height: 16px;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 35% 35%, #2b3a4d 0%, #0B1726 70%);
+  box-shadow: 0 0 0 3px rgba(11, 23, 38, 0.06);
+}
+
+@keyframes mb-drift {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(var(--r, 0deg)); }
+  50%      { transform: translate3d(0, -18px, 0) rotate(var(--r, 0deg)); }
+}
+
+.mb-cta { animation: mb-cta-glow 3s ease-in-out infinite; }
+@keyframes mb-cta-glow {
+  0%, 100% { box-shadow: 0 20px 50px rgba(0, 0, 0, 0.22); }
+  50%      { box-shadow: 0 24px 60px rgba(11, 23, 38, 0.35), 0 0 0 2px rgba(11, 23, 38, 0.08); }
+}
+
+.mb-enter { animation: mb-enter 0.5s ease-out both; }
+@keyframes mb-enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/iris-favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IRIS - Command Center</title>
+    <!-- Apply persisted theme classes before hydration to avoid a flash of the
+         wrong theme (light/dark + amber/cyberpunk family). -->
+    <script>
+      try {
+        var t = localStorage.getItem('theme');
+        if (t === 'light' || t === 'dark') document.documentElement.classList.add(t);
+        if (localStorage.getItem('themeFamily') === 'cyberpunk')
+          document.documentElement.classList.add('theme-cyberpunk');
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,2012 @@
+/* ═══════════════════════════════════════════════════════════
+   IRIS — OVERSIGHT Tactical Design System
+   Shared utilities applied across all internal screens
+   ═══════════════════════════════════════════════════════════ */
+
+:root,
+:root.dark,
+:root.light {
+  /* Derive the whole tactical palette from the host shadcn tokens so the
+     irisdrone pages (violations, ANPR) blend with the rest of the app across
+     all four combos — amber/cyberpunk × light/dark — automatically. The accent
+     follows --brand-accent[-rgb]; surfaces/text follow the host card/foreground.
+     (One block covers light + dark because the host tokens themselves switch.) */
+  --tact-accent-rgb: var(--brand-accent-rgb);
+  --tact-bg: hsl(var(--background));
+  --tact-bg-1: hsl(var(--card));
+  --tact-bg-2: hsl(var(--card));
+  --tact-bg-3: hsl(var(--muted));
+  --tact-surface: hsl(var(--card));
+  --tact-surface-hover: hsl(var(--accent));
+  --tact-border: hsl(var(--border));
+  --tact-border-bright: rgba(var(--brand-accent-rgb), 0.45);
+  --tact-cyan: var(--brand-accent);
+  --tact-cyan-bright: var(--brand-accent);
+  --tact-cyan-dim: rgba(var(--brand-accent-rgb), 0.35);
+  --tact-amber: var(--brand-accent);
+  --tact-red: hsl(var(--destructive));
+  --tact-green: #22c55e;
+  --tact-purple: var(--brand-accent);
+  --tact-text: hsl(var(--foreground));
+  --tact-text-bright: hsl(var(--foreground));
+  --tact-text-mid: hsl(var(--muted-foreground));
+  --tact-text-dim: hsl(var(--muted-foreground));
+
+  --tact-font-display: 'Inter', system-ui, sans-serif;
+  --tact-font-body: 'Inter', system-ui, sans-serif;
+  /* Neutralized: use the same Inter sans as the rest of the app (no terminal/sci-fi mono).
+     tabular-nums keeps figures aligned without the monospace look. */
+  --tact-font-mono: 'Inter', system-ui, sans-serif;
+}
+
+/* ─── Surfaces ─────────────────────────── */
+.tact-surface {
+  background: var(--tact-surface);
+  border: 1px solid var(--tact-border);
+  position: relative;
+}
+
+.tact-card {
+  position: relative;
+  background: linear-gradient(180deg, hsl(var(--card) / 0.92) 0%, hsl(var(--card) / 0.94) 100%);
+  border: 1px solid hsl(var(--border) / 0.18);
+  padding: 16px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.tact-card {
+  /* Always reserve 1px for hover highlight to prevent layout shift */
+  outline: 1px solid transparent;
+  outline-offset: -1px;
+}
+.tact-card:hover {
+  outline-color: var(--tact-cyan-bright);
+  box-shadow: 0 24px 48px -24px rgba(var(--tact-accent-rgb, 0, 240, 255), 0.18);
+}
+
+/* Corner brackets — applies pseudo-elements at all 4 corners */
+.tact-brackets {
+  position: relative;
+}
+.tact-brackets::before,
+.tact-brackets::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--tact-cyan-dim);
+  transition: border-color 0.3s ease;
+}
+.tact-brackets::before {
+  top: -1px; left: -1px;
+  border-right: none;
+  border-bottom: none;
+}
+.tact-brackets::after {
+  bottom: -1px; right: -1px;
+  border-left: none;
+  border-top: none;
+}
+.tact-brackets:hover::before,
+.tact-brackets:hover::after,
+.tact-brackets[data-active="true"]::before,
+.tact-brackets[data-active="true"]::after {
+  border-color: var(--tact-cyan);
+}
+
+/* 4-corner brackets variant */
+.tact-brackets-4 {
+  position: relative;
+}
+.tact-brackets-4 > .tact-corner {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-color: var(--tact-cyan-dim);
+  border-style: solid;
+  pointer-events: none;
+  transition: border-color 0.3s ease;
+}
+.tact-brackets-4 > .tact-corner-tl { top: -1px; left: -1px; border-width: 1px 0 0 1px; }
+.tact-brackets-4 > .tact-corner-tr { top: -1px; right: -1px; border-width: 1px 1px 0 0; }
+.tact-brackets-4 > .tact-corner-bl { bottom: -1px; left: -1px; border-width: 0 0 1px 1px; }
+.tact-brackets-4 > .tact-corner-br { bottom: -1px; right: -1px; border-width: 0 1px 1px 0; }
+.tact-brackets-4:hover > .tact-corner { border-color: var(--tact-cyan); }
+
+/* ─── Typography ─────────────────────── */
+.tact-mono {
+  font-family: var(--tact-font-mono);
+  letter-spacing: 0.05em;
+}
+.tact-display {
+  font-family: var(--tact-font-display);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.tact-label {
+  font-family: var(--tact-font-display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+  line-height: 1;
+}
+.tact-label-sm {
+  font-family: var(--tact-font-display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+  line-height: 1;
+}
+.tact-value {
+  font-family: var(--tact-font-mono);
+  color: var(--tact-text-bright);
+  letter-spacing: 0.04em;
+}
+.tact-value-lg {
+  font-family: var(--tact-font-mono);
+  font-size: 28px;
+  color: var(--tact-text-bright);
+  letter-spacing: 0.05em;
+  line-height: 1;
+}
+
+/* ─── Status dots ─────────────────────── */
+.tact-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  position: relative;
+  flex-shrink: 0;
+}
+.tact-dot::after {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 100%; height: 100%;
+  margin: -50% 0 0 -50%;
+  border-radius: 50%;
+  background: inherit;
+  opacity: 0.35;
+  animation: tact-pulse 2.5s ease-in-out infinite;
+}
+.tact-dot--cyan { background: var(--tact-cyan); box-shadow: 0 0 6px var(--tact-cyan); }
+.tact-dot--amber { background: var(--tact-amber); box-shadow: 0 0 6px var(--tact-amber); }
+.tact-dot--red { background: var(--tact-red); box-shadow: 0 0 6px var(--tact-red); }
+.tact-dot--green { background: var(--tact-green); box-shadow: 0 0 6px var(--tact-green); }
+.tact-dot--purple { background: var(--tact-purple); box-shadow: 0 0 6px var(--tact-purple); }
+.tact-dot--mid { background: var(--tact-text-mid); }
+
+@keyframes tact-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.35; }
+  50% { transform: scale(2); opacity: 0; }
+}
+
+/* ─── Chips & badges ───────────────────── */
+.tact-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  font-family: var(--tact-font-display);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--tact-text-mid);
+  background: rgba(var(--tact-accent-rgb, 0, 240, 255), 0.04);
+  border: 1px solid var(--tact-border);
+  line-height: 1;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+.tact-chip:hover {
+  border-color: var(--tact-border-bright);
+  color: var(--tact-text-bright);
+}
+.tact-chip[data-variant="cyan"] {
+  color: var(--tact-cyan-bright);
+  border-color: rgba(var(--tact-accent-rgb, 0, 240, 255), 0.35);
+  background: rgba(var(--tact-accent-rgb, 0, 240, 255), 0.08);
+}
+.tact-chip[data-variant="amber"] {
+  color: #fcd34d;
+  border-color: rgba(255, 183, 0, 0.35);
+  background: rgba(255, 183, 0, 0.08);
+}
+.tact-chip[data-variant="red"] {
+  color: #fca5a5;
+  border-color: rgba(255, 42, 42, 0.35);
+  background: rgba(255, 42, 42, 0.08);
+}
+.tact-chip[data-variant="green"] {
+  color: #6ee7b7;
+  border-color: rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.08);
+}
+.tact-chip[data-variant="purple"] {
+  color: #c4b5fd;
+  border-color: rgba(138, 106, 201, 0.35);
+  background: rgba(138, 106, 201, 0.08);
+}
+
+/* ─── Buttons ──────────────────────────── */
+.tact-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 16px;
+  font-family: var(--tact-font-display);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--tact-text);
+  background: rgba(var(--tact-accent-rgb, 0, 240, 255), 0.05);
+  border: 1px solid var(--tact-border);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  white-space: nowrap;
+  line-height: 1;
+}
+.tact-btn:hover:not(:disabled) {
+  background: rgba(var(--tact-accent-rgb, 0, 240, 255), 0.1);
+  border-color: var(--tact-cyan-dim);
+  color: var(--tact-cyan-bright);
+  box-shadow: 0 0 16px -4px rgba(var(--tact-accent-rgb, 0, 240, 255), 0.3);
+}
+.tact-btn:active:not(:disabled) { transform: translateY(1px); }
+.tact-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.tact-btn--primary {
+  background: linear-gradient(180deg, rgba(var(--tact-accent-rgb, 0, 240, 255), 0.18) 0%, rgba(var(--tact-accent-rgb, 0, 240, 255), 0.08) 100%);
+  border-color: rgba(var(--tact-accent-rgb, 0, 240, 255), 0.45);
+  color: var(--tact-cyan-bright);
+}
+.tact-btn--primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, rgba(var(--tact-accent-rgb, 0, 240, 255), 0.26) 0%, rgba(var(--tact-accent-rgb, 0, 240, 255), 0.14) 100%);
+  border-color: var(--tact-cyan);
+}
+
+.tact-btn--ghost {
+  background: transparent;
+  border-color: transparent;
+}
+.tact-btn--ghost:hover:not(:disabled) {
+  background: rgba(var(--tact-accent-rgb, 0, 240, 255), 0.06);
+  border-color: rgba(var(--tact-accent-rgb, 0, 240, 255), 0.3);
+}
+
+.tact-btn--danger {
+  background: rgba(255, 42, 42, 0.08);
+  border-color: rgba(255, 42, 42, 0.4);
+  color: #FCA5A5;
+}
+.tact-btn--danger:hover:not(:disabled) {
+  background: rgba(255, 42, 42, 0.16);
+  border-color: rgba(255, 42, 42, 0.6);
+  color: #FECACA;
+  box-shadow: 0 0 16px -4px rgba(255, 42, 42, 0.5);
+}
+
+.tact-btn--link {
+  background: transparent;
+  border-color: transparent;
+  color: var(--tact-cyan-bright, hsl(var(--primary)));
+  height: auto;
+  padding: 0;
+}
+.tact-btn--link:hover:not(:disabled) {
+  text-decoration: underline;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.tact-btn--icon {
+  width: 36px;
+  padding: 0;
+}
+
+.tact-btn--sm {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 10px;
+}
+
+/* ─── Inputs ───────────────────────────── */
+/* @layer components ensures Tailwind utilities (in @layer utilities)
+ * can override these properties. Layer order: components < utilities. */
+@layer components {
+  .tact-input {
+    height: 38px;
+    padding-left: 12px;
+    padding-right: 12px;
+    background: hsl(var(--card) / 0.7);
+    border: 1px solid hsl(var(--border) / 0.5);
+    color: hsl(var(--foreground));
+    font-family: var(--tact-font-mono);
+    font-size: 13px;
+    outline: none;
+    transition: all 0.2s ease;
+    width: 100%;
+  }
+  .tact-input::placeholder {
+    color: hsl(var(--muted-foreground));
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 11px;
+    font-weight: 400;
+  }
+}
+.tact-input:focus {
+  border-color: var(--tact-cyan-dim);
+  box-shadow: 0 0 0 1px rgba(var(--brand-accent-rgb), 0.15), 0 0 16px -4px rgba(var(--tact-accent-rgb, 0, 240, 255), 0.25);
+  background: hsl(var(--card) / 0.85);
+}
+
+/* ─── Dividers ─────────────────────────── */
+.tact-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, var(--tact-cyan-dim) 50%, transparent 100%);
+  opacity: 0.5;
+}
+.tact-divider-v {
+  width: 1px;
+  background: linear-gradient(180deg, transparent 0%, var(--tact-cyan-dim) 50%, transparent 100%);
+  opacity: 0.5;
+}
+
+/* ─── Scanlines & decorative chrome ───── */
+.tact-scanlines {
+  background-image: repeating-linear-gradient(
+    0deg,
+    rgba(var(--tact-accent-rgb, 0, 240, 255), 0.02) 0,
+    rgba(var(--tact-accent-rgb, 0, 240, 255), 0.02) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}
+
+.tact-grid-bg {
+  background-image:
+    linear-gradient(rgba(var(--tact-accent-rgb, 0, 240, 255), 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--tact-accent-rgb, 0, 240, 255), 0.02) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+.tact-glow-cyan {
+  box-shadow: 0 0 24px -8px rgba(var(--tact-accent-rgb, 0, 240, 255), 0.5);
+}
+
+/* ─── Stat tile ────────────────────────── */
+.tact-stat {
+  position: relative;
+  padding: 14px 16px;
+  background: linear-gradient(180deg, hsl(var(--card) / 0.9) 0%, hsl(var(--card) / 0.95) 100%);
+  border: 1px solid hsl(var(--border) / 0.18);
+  outline: 1px solid transparent;
+  outline-offset: -1px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 84px;
+  transition: outline-color 0.2s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.tact-stat:hover {
+  outline-color: var(--tact-cyan-bright);
+  transform: translateY(-1px);
+  box-shadow: 0 12px 32px -16px rgba(var(--tact-accent-rgb, 0, 240, 255), 0.3);
+}
+.tact-stat-label {
+  font-family: var(--tact-font-display);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--tact-text-mid);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 1;
+}
+.tact-stat-value {
+  font-family: var(--tact-font-mono);
+  font-size: 28px;
+  color: var(--tact-text-bright);
+  line-height: 1;
+  letter-spacing: 0.03em;
+}
+.tact-stat-meta {
+  font-family: var(--tact-font-mono);
+  font-size: 10px;
+  color: var(--tact-text-dim);
+  letter-spacing: 0.04em;
+  margin-top: auto;
+}
+
+/* ─── Section header ──────────────────── */
+.tact-section-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 8px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--tact-border);
+}
+.tact-section-head-title {
+  font-family: var(--tact-font-display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--tact-text-bright);
+}
+.tact-section-head-sub {
+  font-family: var(--tact-font-mono);
+  font-size: 10px;
+  color: var(--tact-text-dim);
+  margin-left: auto;
+}
+
+/* ─── Tabs ──────────────────────────────── */
+.tact-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  background: hsl(var(--card) / 0.7);
+  border: 1px solid var(--tact-border);
+  padding: 3px;
+}
+.tact-tab {
+  height: 30px;
+  padding: 0 16px;
+  font-family: var(--tact-font-display);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--tact-text-mid);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.tact-tab:hover { color: var(--tact-text-bright); }
+.tact-tab[data-active="true"] {
+  background: rgba(var(--tact-accent-rgb, 0, 240, 255), 0.1);
+  color: var(--tact-cyan-bright);
+  box-shadow: inset 0 0 0 1px rgba(var(--brand-accent-rgb), 0.2);
+}
+
+/* ─── Empty state ───────────────────────── */
+.tact-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 48px 24px;
+  text-align: center;
+  width: 100%;
+  height: 100%;
+  min-height: 180px;
+  position: relative;
+}
+
+.tact-empty-icon {
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--tact-border);
+  color: var(--tact-text-mid);
+  position: relative;
+  background: linear-gradient(180deg, rgba(var(--tact-accent-rgb, 0, 240, 255), 0.04) 0%, transparent 100%);
+  flex-shrink: 0;
+}
+.tact-empty-icon svg {
+  width: 24px;
+  height: 24px;
+  opacity: 0.85;
+}
+.tact-empty-icon::before,
+.tact-empty-icon::after {
+  content: '';
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-color: var(--tact-cyan-bright);
+  border-style: solid;
+  opacity: 0.7;
+}
+.tact-empty-icon::before {
+  top: -1px;
+  left: -1px;
+  border-width: 1px 0 0 1px;
+}
+.tact-empty-icon::after {
+  bottom: -1px;
+  right: -1px;
+  border-width: 0 1px 1px 0;
+}
+
+/* Subtle pulse on the icon background */
+.tact-empty-icon {
+  animation: tact-empty-icon-pulse 3s ease-in-out infinite;
+}
+@keyframes tact-empty-icon-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(var(--tact-accent-rgb, 0, 240, 255), 0.18);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(var(--tact-accent-rgb, 0, 240, 255), 0);
+  }
+}
+
+.tact-empty-title {
+  font-family: var(--tact-font-display);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--tact-text);
+  margin: 0;
+}
+
+.tact-empty-desc {
+  font-family: var(--tact-font-mono);
+  font-size: 10px;
+  color: var(--tact-text-mid);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  max-width: 280px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* ─── Page surfaces ────────────────────── */
+.tact-page {
+  background: var(--tact-bg);
+  position: relative;
+  min-height: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.tact-page::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(var(--tact-accent-rgb, 0, 240, 255), 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--tact-accent-rgb, 0, 240, 255), 0.018) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+  z-index: 0;
+}
+.tact-page-content {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 auto;
+  min-height: 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+/* Force every direct child of tact-page-content to fill the available area
+ * without interfering with its own flex direction */
+.tact-page-content > * {
+  flex: 1 1 auto;
+  min-height: 100%;
+  width: 100%;
+}
+
+/* ─── Responsive helpers ───────────────── */
+@media (max-width: 768px) {
+  .tact-stat-value { font-size: 22px; }
+  .tact-stat { padding: 12px; min-height: 72px; }
+  .tact-card { padding: 12px; }
+  .tact-btn { height: 40px; font-size: 11px; padding: 0 14px; }
+  .tact-input { height: 40px; }
+  .tact-tab { height: 36px; }
+  .tact-section-head-title { font-size: 10px; }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   GLOBAL OVERRIDES — coerce common Tailwind patterns into
+   the tactical aesthetic so existing dashboards inherit it
+   ═══════════════════════════════════════════════════════════ */
+
+/* Generic dark stat-tile patterns → tactical surface */
+.tact-page [class*="bg-zinc-900"],
+.tact-page [class*="bg-zinc-800"],
+.tact-page [class*="bg-zinc-950"],
+.tact-page [class*="bg-neutral-900"],
+.tact-page [class*="bg-neutral-800"],
+.tact-page [class*="bg-stone-900"],
+.tact-page [class*="bg-stone-800"],
+.tact-page [class*="bg-gray-900"],
+.tact-page [class*="bg-gray-800"],
+.tact-page [class*="bg-slate-900"],
+.tact-page [class*="bg-slate-800"],
+.tact-page [class*="bg-black"] {
+  background: linear-gradient(180deg, hsl(var(--card) / 0.85) 0%, hsl(var(--card) / 0.92) 100%) !important;
+  border-radius: 0 !important;
+}
+
+/* Solid dark backgrounds (#141414, #0a0a0a, #1a1a1a, etc) → tactical
+   We match the className substring as it appears in the DOM (e.g. "bg-[#0a0a0a]") */
+.tact-page [class*="bg-[#0"],
+.tact-page [class*="bg-[#1"],
+.tact-page [class*="bg-[#2"],
+.tact-page [class*="bg-[#3"] {
+  background: linear-gradient(180deg, hsl(var(--card) / 0.85) 0%, hsl(var(--card) / 0.92) 100%) !important;
+}
+
+/* Solid dark inline-style overrides — covers components using style={{ backgroundColor: '#141414' }} */
+.tact-page *[style*="background-color: rgb(20, 20, 20)"],
+.tact-page *[style*="background-color: rgb(10, 10, 10)"],
+.tact-page *[style*="background-color: rgb(26, 26, 26)"],
+.tact-page *[style*="background-color: rgb(24, 24, 27)"],
+.tact-page *[style*="background-color: rgb(5, 5, 5)"],
+.tact-page *[style*="background-color: rgb(39, 39, 42)"],
+.tact-page *[style*="background-color: #141414"],
+.tact-page *[style*="background-color: #0a0a0a"],
+.tact-page *[style*="background-color: #1a1a1a"],
+.tact-page *[style*="background-color: #18181b"],
+.tact-page *[style*="background-color: #050505"],
+.tact-page *[style*="background-color: #27272a"] {
+  background-color: hsl(var(--card) / 0.85) !important;
+  background-image: linear-gradient(180deg, hsl(var(--card) / 0.85) 0%, hsl(var(--card) / 0.92) 100%) !important;
+}
+
+/* Subtle border patterns → tactical border */
+.tact-page [class*="border-white/5"],
+.tact-page [class*="border-white/10"],
+.tact-page [class*="border-white/\\[0\\.06\\]"],
+.tact-page [class*="border-white/\\[0\\.08\\]"],
+.tact-page [class*="border-zinc-800"],
+.tact-page [class*="border-zinc-700"],
+.tact-page [class*="border-neutral-800"],
+.tact-page [class*="border-stone-800"],
+.tact-page [class*="border-gray-800"],
+.tact-page [class*="border-slate-800"] {
+  border-color: hsl(var(--border) / 0.25) !important;
+}
+
+/* Force inputs in Tailwind styles into tactical look */
+input.flex.h-10,
+textarea.flex {
+  border-color: hsl(var(--border) / 0.4) !important;
+  background: hsl(var(--card) / 0.6) !important;
+  font-family: 'Share Tech Mono', monospace !important;
+  border-radius: 0 !important;
+}
+
+/* Zinc text colors → tactical text — scoped to .tact-page only so home stays unaffected */
+.tact-page .text-zinc-100,
+.tact-page .text-white { color: hsl(var(--foreground)) !important; }
+.tact-page .text-zinc-200 { color: hsl(var(--foreground)) !important; }
+.tact-page .text-zinc-300 { color: hsl(var(--foreground)) !important; }
+.tact-page .text-zinc-400 { color: hsl(var(--muted-foreground)) !important; }
+.tact-page .text-zinc-500 { color: hsl(var(--muted-foreground)) !important; }
+.tact-page .text-zinc-600 { color: hsl(var(--muted-foreground)) !important; }
+.tact-page .text-muted-foreground { color: hsl(var(--muted-foreground)) !important; }
+
+/* (Removed) the old square-tactical override that forced border-radius:0 on
+   every rounded-* utility — the host design language is rounded (rounded-xl
+   cards), so tactical pages now keep their Tailwind radii and the tactical
+   primitives below carry matching host radii. */
+
+/* Headings on dashboards become display style */
+.tact-page h1,
+.tact-page h2 {
+  font-family: 'Rajdhani', 'Inter', sans-serif !important;
+  letter-spacing: 0.05em !important;
+  text-transform: uppercase !important;
+}
+.tact-page h2 { font-size: 14px !important; font-weight: 700 !important; }
+.tact-page h1 { font-size: 18px !important; font-weight: 700 !important; }
+
+/* Native select → tactical look */
+.tact-page select {
+  background: hsl(var(--card) / 0.6) !important;
+  border: 1px solid hsl(var(--border) / 0.4) !important;
+  border-radius: 0 !important;
+  color: hsl(var(--foreground)) !important;
+  font-family: 'Share Tech Mono', monospace !important;
+  font-size: 11px !important;
+  letter-spacing: 0.05em !important;
+  padding: 0 24px 0 10px !important;
+  height: 32px !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%2366F7FF' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 8px center !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+}
+.tact-page select:hover { border-color: rgba(var(--tact-accent-rgb, 0, 240, 255), 0.5) !important; }
+.tact-page select:focus {
+  outline: none !important;
+  border-color: rgba(var(--tact-accent-rgb, 0, 240, 255), 0.6) !important;
+  box-shadow: 0 0 0 1px rgba(var(--brand-accent-rgb), 0.2), 0 0 16px -4px rgba(var(--tact-accent-rgb, 0, 240, 255), 0.4) !important;
+}
+
+/* Date input picker arrow */
+.tact-page input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.7) sepia(1) saturate(5) hue-rotate(155deg);
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+.tact-page input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
+
+/* ─── Focus rings everywhere ─────────── */
+.tact-page button:focus-visible,
+.tact-page a:focus-visible,
+button.tact-btn:focus-visible {
+  outline: 1px solid rgba(var(--tact-accent-rgb, 0, 240, 255), 0.6);
+  outline-offset: 2px;
+  box-shadow: 0 0 16px -4px rgba(var(--tact-accent-rgb, 0, 240, 255), 0.5);
+}
+
+/* ─── Skeleton shimmer ───────────────── */
+.tact-skeleton {
+  position: relative;
+  background: linear-gradient(90deg, hsl(var(--card) / 0.5) 0%, hsl(var(--border) / 0.18) 50%, hsl(var(--card) / 0.5) 100%);
+  background-size: 200% 100%;
+  animation: tact-shimmer 1.6s ease-in-out infinite;
+  border: 1px solid hsl(var(--border) / 0.18);
+}
+
+@keyframes tact-shimmer {
+  0%, 100% { background-position: 200% 0; }
+  50% { background-position: -200% 0; }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SMOOTH IMAGE — WhatsApp-style blur-up loading
+   ═══════════════════════════════════════════════════════════ */
+.smooth-img {
+  position: relative;
+  overflow: hidden;
+  background: hsl(var(--card) / 0.6);
+  width: 100%;
+  height: 100%;
+  display: block;
+  isolation: isolate;
+}
+
+.smooth-img-skel {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, hsl(var(--border) / 0.08) 0%, hsl(var(--card) / 0.4) 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+  opacity: 1;
+  transition: opacity 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.smooth-img[data-status="loaded"] .smooth-img-skel {
+  opacity: 0;
+}
+
+.smooth-img-shimmer {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 0%,
+    transparent 38%,
+    rgba(var(--tact-accent-rgb, 0, 240, 255), 0.06) 50%,
+    transparent 62%,
+    transparent 100%
+  );
+  background-size: 250% 100%;
+  animation: smooth-img-shimmer 1.6s ease-in-out infinite;
+}
+
+@keyframes smooth-img-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.smooth-img-icon {
+  position: relative;
+  z-index: 1;
+  color: rgba(var(--tact-accent-rgb, 0, 240, 255), 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+}
+.smooth-img-icon svg { width: 28px; height: 28px; }
+
+.smooth-img-el {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 2;
+  opacity: 0;
+  filter: blur(18px) saturate(0.7);
+  transform: scale(1.06);
+  transition:
+    opacity 0.6s cubic-bezier(0.2, 0.8, 0.2, 1),
+    filter 0.7s cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.smooth-img[data-status="loaded"] .smooth-img-el {
+  opacity: 1;
+  filter: blur(0) saturate(1);
+  transform: scale(1);
+}
+
+.smooth-img-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 42, 42, 0.04);
+  color: rgba(255, 42, 42, 0.4);
+  z-index: 3;
+}
+.smooth-img-error svg { width: 32px; height: 32px; }
+
+/* ─── Auto-blur-up for ALL <img> inside .tact-page that aren't wrapped ─── */
+.tact-page img:not(.smooth-img-el):not([data-no-fade]):not(.leaflet-tile) {
+  animation: tact-img-fadein 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes tact-img-fadein {
+  from {
+    opacity: 0;
+    filter: blur(12px) saturate(0.7);
+    transform: scale(1.04);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0) saturate(1);
+    transform: scale(1);
+  }
+}
+
+/* ─── Page enter animation ────────────── */
+.tact-page-content {
+  animation: tact-page-in 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+@keyframes tact-page-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ─── Custom scrollbars in tactical pages ─── */
+.tact-page ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.tact-page ::-webkit-scrollbar-track {
+  background: hsl(var(--card) / 0.4);
+}
+.tact-page ::-webkit-scrollbar-thumb {
+  background: hsl(var(--border) / 0.4);
+  border: 2px solid #020408;
+}
+.tact-page ::-webkit-scrollbar-thumb:hover {
+  background: rgba(var(--tact-accent-rgb, 0, 240, 255), 0.4);
+}
+
+/* ─── Stat tile top accent line ───────── */
+.tact-page [class*="bg-zinc-900\\/30"]:not(button):not(input)::before,
+.tact-page [class*="bg-zinc-900\\/40"]:not(button):not(input)::before,
+.tact-page [class*="bg-zinc-900\\/50"]:not(button):not(input)::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 12px;
+  right: 12px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, rgba(var(--tact-accent-rgb, 0, 240, 255), 0.4) 50%, transparent 100%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+.tact-page [class*="bg-zinc-900\\/30"]:not(button):not(input):hover::before,
+.tact-page [class*="bg-zinc-900\\/40"]:not(button):not(input):hover::before,
+.tact-page [class*="bg-zinc-900\\/50"]:not(button):not(input):hover::before {
+  opacity: 1;
+}
+.tact-page [class*="bg-zinc-900\\/30"]:not(button):not(input),
+.tact-page [class*="bg-zinc-900\\/40"]:not(button):not(input),
+.tact-page [class*="bg-zinc-900\\/50"]:not(button):not(input) {
+  position: relative;
+  transition: all 0.25s ease !important;
+}
+.tact-page [class*="bg-zinc-900\\/30"]:not(button):not(input):hover,
+.tact-page [class*="bg-zinc-900\\/40"]:not(button):not(input):hover,
+.tact-page [class*="bg-zinc-900\\/50"]:not(button):not(input):hover {
+  border-color: rgba(var(--tact-accent-rgb, 0, 240, 255), 0.4) !important;
+  box-shadow: 0 12px 32px -16px rgba(var(--tact-accent-rgb, 0, 240, 255), 0.25);
+  transform: translateY(-1px);
+}
+
+/* ─── Toggle switch (Tailwind peer) → tactical ─── */
+.tact-page input[type="checkbox"][role="switch"] + div,
+.tact-page button[role="switch"] {
+  border: 1px solid hsl(var(--border) / 0.4) !important;
+}
+.tact-page button[role="switch"][data-state="checked"],
+.tact-page button[role="switch"][aria-checked="true"] {
+  background: rgba(var(--tact-accent-rgb, 0, 240, 255), 0.25) !important;
+  border-color: rgba(var(--tact-accent-rgb, 0, 240, 255), 0.6) !important;
+  box-shadow: 0 0 12px -2px rgba(var(--tact-accent-rgb, 0, 240, 255), 0.4) !important;
+}
+
+/* ─── Smooth global transitions ──────── */
+.tact-page button,
+.tact-page a,
+.tact-page [role="button"],
+.tact-page [tabindex] {
+  transition-property: background-color, border-color, color, fill, stroke, opacity, box-shadow, transform, outline-color;
+  transition-duration: 200ms;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   KEYBOARD KEY CHIPS — Tactical <Kbd> component
+   ═══════════════════════════════════════════════════════════ */
+.tact-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Share Tech Mono', monospace;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  border: 1px solid hsl(var(--border) / 0.55);
+  background: linear-gradient(180deg, rgba(var(--tact-accent-rgb, 0, 240, 255), 0.06) 0%, hsl(var(--card) / 0.5) 100%);
+  color: hsl(var(--muted-foreground));
+  border-radius: 3px;
+  box-shadow:
+    inset 0 -1px 0 rgba(var(--tact-accent-rgb, 0, 240, 255), 0.18),
+    0 1px 0 rgba(0, 0, 0, 0.5);
+  vertical-align: middle;
+  white-space: nowrap;
+  user-select: none;
+  transition: all 0.15s ease;
+  line-height: 1;
+}
+.tact-kbd--xs { min-width: 16px; height: 16px; padding: 0 4px; font-size: 9px; }
+.tact-kbd--sm { min-width: 20px; height: 20px; padding: 0 6px; font-size: 10px; }
+.tact-kbd--md { min-width: 26px; height: 24px; padding: 0 8px; font-size: 11px; }
+
+.tact-kbd--subtle {
+  background: hsl(var(--card) / 0.4);
+  border-color: hsl(var(--border) / 0.35);
+  color: hsl(var(--muted-foreground));
+  box-shadow: none;
+}
+
+.tact-kbd--accent {
+  background: linear-gradient(180deg, rgba(var(--tact-accent-rgb, 0, 240, 255), 0.18) 0%, rgba(var(--tact-accent-rgb, 0, 240, 255), 0.06) 100%);
+  border-color: rgba(var(--tact-accent-rgb, 0, 240, 255), 0.6);
+  color: var(--tact-cyan-bright, hsl(var(--primary)));
+  box-shadow:
+    inset 0 -1px 0 rgba(var(--tact-accent-rgb, 0, 240, 255), 0.4),
+    0 0 8px -2px rgba(var(--tact-accent-rgb, 0, 240, 255), 0.4);
+  text-shadow: 0 0 6px rgba(var(--tact-accent-rgb, 0, 240, 255), 0.5);
+}
+
+/* Group multiple keys into a chord */
+.tact-kbd-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  vertical-align: middle;
+}
+.tact-kbd-group-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.tact-kbd-sep {
+  color: hsl(var(--muted-foreground));
+  font-size: 10px;
+  font-family: 'Share Tech Mono', monospace;
+}
+
+/* Hover-pressed effect when adjacent button is hovered */
+button:hover > .tact-kbd,
+button:hover .tact-kbd-group .tact-kbd {
+  border-color: rgba(var(--brand-accent-rgb), 0.7);
+  color: var(--tact-cyan-bright, hsl(var(--primary)));
+  box-shadow:
+    inset 0 -1px 0 rgba(var(--tact-accent-rgb, 0, 240, 255), 0.5),
+    0 0 8px -2px rgba(var(--tact-accent-rgb, 0, 240, 255), 0.5);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   CUSTOM SELECT — Replaces all native <select>
+   ═══════════════════════════════════════════════════════════ */
+.tact-select {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+}
+
+.tact-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  height: 36px;
+  padding: 0 10px 0 12px;
+  background: hsl(var(--card) / 0.6);
+  border: 1px solid hsl(var(--border) / 0.4);
+  color: hsl(var(--foreground));
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.tact-select-trigger:hover:not(:disabled) {
+  border-color: rgba(var(--tact-accent-rgb, 0, 240, 255), 0.5);
+  background: rgba(var(--tact-accent-rgb, 0, 240, 255), 0.04);
+}
+
+.tact-select-trigger:focus-visible,
+.tact-select-trigger[aria-expanded="true"] {
+  border-color: rgba(var(--tact-accent-rgb, 0, 240, 255), 0.6);
+  box-shadow: 0 0 0 1px rgba(var(--brand-accent-rgb), 0.2), 0 0 16px -4px rgba(var(--tact-accent-rgb, 0, 240, 255), 0.4);
+  background: hsl(var(--card) / 0.85);
+}
+
+.tact-select-trigger:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.tact-select-value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tact-select-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--tact-cyan-bright, hsl(var(--primary)));
+}
+.tact-select-icon svg { width: 14px; height: 14px; }
+
+.tact-select-placeholder {
+  color: hsl(var(--muted-foreground));
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 10px;
+}
+
+.tact-select-chevron {
+  color: hsl(var(--muted-foreground));
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.tact-select-chevron-open {
+  transform: rotate(180deg);
+  color: var(--tact-cyan-bright, hsl(var(--primary)));
+}
+
+.tact-select-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  background: linear-gradient(180deg, hsl(var(--card) / 0.98) 0%, hsl(var(--card) / 0.98) 100%);
+  border: 1px solid rgba(var(--tact-accent-rgb, 0, 240, 255), 0.45);
+  box-shadow:
+    0 24px 64px -16px rgba(0, 0, 0, 0.7),
+    0 0 32px -8px rgba(var(--tact-accent-rgb, 0, 240, 255), 0.25);
+  animation: tact-select-popover-in 0.16s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes tact-select-popover-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.tact-select-search {
+  padding: 6px;
+  border-bottom: 1px solid hsl(var(--border) / 0.3);
+}
+
+.tact-select-search-input {
+  width: 100%;
+  height: 28px;
+  padding: 0 10px;
+  background: hsl(var(--card) / 0.6);
+  border: 1px solid hsl(var(--border) / 0.3);
+  color: hsl(var(--foreground));
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.tact-select-search-input:focus {
+  border-color: rgba(var(--tact-accent-rgb, 0, 240, 255), 0.5);
+}
+.tact-select-search-input::placeholder {
+  color: hsl(var(--muted-foreground));
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 9px;
+}
+
+.tact-select-list {
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.tact-select-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: hsl(var(--foreground));
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-align: left;
+  cursor: pointer;
+  outline: none;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.tact-select-option-highlighted {
+  background: rgba(var(--tact-accent-rgb, 0, 240, 255), 0.08);
+  border-color: rgba(var(--tact-accent-rgb, 0, 240, 255), 0.3);
+  color: var(--tact-cyan-bright, hsl(var(--primary)));
+}
+
+.tact-select-option-selected .tact-select-option-label {
+  color: var(--tact-cyan-bright, hsl(var(--primary)));
+}
+
+.tact-select-option-icon {
+  display: inline-flex;
+  align-items: center;
+  color: hsl(var(--muted-foreground));
+  flex-shrink: 0;
+}
+.tact-select-option-highlighted .tact-select-option-icon { color: var(--tact-cyan-bright, hsl(var(--primary))); }
+.tact-select-option-icon svg { width: 14px; height: 14px; }
+
+.tact-select-option-label {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tact-select-option-desc {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 9px;
+  color: hsl(var(--muted-foreground));
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.tact-select-option-check {
+  color: var(--tact-cyan-bright, hsl(var(--primary)));
+  flex-shrink: 0;
+}
+
+.tact-select-empty {
+  padding: 14px;
+  text-align: center;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  color: hsl(var(--muted-foreground));
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* ─── Body lock dim during loading ───── */
+@keyframes tact-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.tact-fade-in { animation: tact-fade-in 0.3s ease forwards; }
+
+/* ═══════════════════════════════════════════════════════════
+   SCROLLBARS — auto-hide, show only while hovering / scrolling
+   No horizontal scrollbars anywhere; content wraps instead
+   ═══════════════════════════════════════════════════════════ */
+
+/* Default: hide scrollbar entirely. Firefox + Chromium */
+.tact-page,
+.tact-page *,
+.smooth-img,
+aside,
+.tact-select-popover {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.tact-page *::-webkit-scrollbar,
+.tact-page::-webkit-scrollbar,
+aside *::-webkit-scrollbar,
+aside::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+  background: transparent;
+}
+
+.tact-page *::-webkit-scrollbar-track,
+.tact-page::-webkit-scrollbar-track,
+aside *::-webkit-scrollbar-track,
+aside::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tact-page *::-webkit-scrollbar-thumb,
+.tact-page::-webkit-scrollbar-thumb,
+aside *::-webkit-scrollbar-thumb,
+aside::-webkit-scrollbar-thumb {
+  background: transparent;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 10px;
+  transition: background-color 0.3s ease;
+}
+
+/* Reveal scrollbar when hovering the scroll container */
+.tact-page *:hover::-webkit-scrollbar-thumb,
+.tact-page:hover::-webkit-scrollbar-thumb,
+aside:hover::-webkit-scrollbar-thumb,
+aside *:hover::-webkit-scrollbar-thumb {
+  background: rgba(var(--tact-accent-rgb, 0, 240, 255), 0.25);
+  background-clip: padding-box;
+}
+
+.tact-page *:hover {
+  scrollbar-color: rgba(var(--tact-accent-rgb, 0, 240, 255), 0.25) transparent;
+}
+
+.tact-page *::-webkit-scrollbar-thumb:hover,
+aside::-webkit-scrollbar-thumb:hover {
+  background: rgba(var(--tact-accent-rgb, 0, 240, 255), 0.5) !important;
+  background-clip: padding-box !important;
+}
+
+/* Body should never show a horizontal scrollbar at the page level */
+html, body {
+  overflow-x: hidden;
+}
+
+/* Top-level page content shouldn't scroll horizontally — but inner
+ * components can opt back in via .tact-scroll-x or their own overflow */
+.tact-page > .tact-page-content {
+  overflow-x: hidden;
+}
+
+/* Allow horizontal scroll only for explicit opt-in */
+.tact-scroll-x {
+  overflow-x: auto !important;
+}
+.tact-scroll-x::-webkit-scrollbar {
+  height: 6px;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   LIGHT MODE — high-contrast WCAG AA, designed for daylight
+   Surfaces white/very light, text deep slate, accent saturated teal
+   ═══════════════════════════════════════════════════════════ */
+:root.light body { background: #F1F5F9; }
+
+/* Page surfaces */
+:root.light .tact-page { background: #F1F5F9; }
+:root.light .tact-page::before {
+  background-image:
+    linear-gradient(rgba(15, 23, 42, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.04) 1px, transparent 1px);
+}
+
+/* Cards — solid white with proper border + shadow */
+:root.light .tact-card {
+  background: #FFFFFF;
+  border: 1px solid #CBD5E1;
+  color: #0F172A;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+:root.light .tact-card:hover {
+  border-color: #D97706;
+  box-shadow: 0 0 0 1px #D97706, 0 12px 32px -16px rgba(217, 119, 6, 0.25);
+}
+
+/* Stat tiles */
+:root.light .tact-stat {
+  background: #FFFFFF !important;
+  border-color: #CBD5E1 !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+:root.light .tact-stat:hover {
+  border-color: #D97706 !important;
+  box-shadow: 0 8px 24px -12px rgba(217, 119, 6, 0.3);
+}
+:root.light .tact-stat-label { color: #334155 !important; }
+:root.light .tact-stat-value { color: #0F172A !important; text-shadow: none !important; }
+:root.light .tact-stat-meta { color: #475569 !important; }
+
+/* Generic dashboard dark patterns → solid white in light mode */
+:root.light .tact-page [class*="bg-zinc-9"],
+:root.light .tact-page [class*="bg-zinc-8"],
+:root.light .tact-page [class*="bg-neutral-9"],
+:root.light .tact-page [class*="bg-stone-9"],
+:root.light .tact-page [class*="bg-gray-9"],
+:root.light .tact-page [class*="bg-slate-9"],
+:root.light .tact-page [class*="bg-black"],
+:root.light .tact-page [class*="bg-[#0"],
+:root.light .tact-page [class*="bg-[#1"],
+:root.light .tact-page [class*="bg-[#2"],
+:root.light .tact-page [class*="bg-[#3"] {
+  background: #FFFFFF !important;
+  background-image: none !important;
+  border-color: #CBD5E1 !important;
+}
+
+/* Borders */
+:root.light .tact-page [class*="border-white"],
+:root.light .tact-page [class*="border-zinc"],
+:root.light .tact-page [class*="border-neutral"],
+:root.light .tact-page [class*="border-stone"],
+:root.light .tact-page [class*="border-gray"],
+:root.light .tact-page [class*="border-slate"] {
+  border-color: #CBD5E1 !important;
+}
+
+/* Text — proper WCAG contrast against white */
+:root.light .tact-page,
+:root.light .tact-page * { color: #0F172A; }
+:root.light .tact-page .text-zinc-100,
+:root.light .tact-page .text-white,
+:root.light .tact-page h1,
+:root.light .tact-page h2,
+:root.light .tact-page h3 { color: #020617 !important; }
+:root.light .tact-page .text-zinc-200 { color: #0F172A !important; }
+:root.light .tact-page .text-zinc-300 { color: #1E293B !important; }
+:root.light .tact-page .text-zinc-400 { color: #334155 !important; }
+:root.light .tact-page .text-zinc-500 { color: #475569 !important; }
+:root.light .tact-page .text-zinc-600 { color: #64748B !important; }
+:root.light .tact-page .text-muted-foreground { color: #475569 !important; }
+
+/* Tactical labels */
+:root.light .tact-label,
+:root.light .tact-label-sm,
+:root.light .tact-display { color: #0F172A !important; }
+:root.light .tact-mono { color: #1E293B !important; }
+:root.light .tact-section-head-title { color: #020617 !important; }
+:root.light .tact-section-head { border-bottom-color: #CBD5E1 !important; }
+
+/* Inputs */
+:root.light .tact-input,
+:root.light .tact-page input[type="text"],
+:root.light .tact-page input[type="password"],
+:root.light .tact-page input[type="search"],
+:root.light .tact-page input[type="email"],
+:root.light .tact-page input[type="number"],
+:root.light .tact-page input[type="date"],
+:root.light .tact-page textarea {
+  background: #FFFFFF !important;
+  border-color: #94A3B8 !important;
+  color: #0F172A !important;
+}
+:root.light .tact-input::placeholder,
+:root.light .tact-page input::placeholder { color: #64748B !important; }
+:root.light .tact-input:focus,
+:root.light .tact-page input:focus {
+  border-color: #D97706 !important;
+  box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.18) !important;
+}
+
+/* Buttons */
+:root.light .tact-btn {
+  color: #0F172A;
+  background: #FFFFFF;
+  border-color: #94A3B8;
+}
+:root.light .tact-btn:hover:not(:disabled) {
+  background: #FFFBEB;
+  border-color: #D97706;
+  color: #D97706;
+  box-shadow: 0 4px 12px -4px rgba(217, 119, 6, 0.25);
+}
+:root.light .tact-btn--primary {
+  background: #D97706;
+  border-color: #D97706;
+  color: #FFFFFF;
+}
+:root.light .tact-btn--primary:hover:not(:disabled) {
+  background: #d97706;
+  border-color: #d97706;
+  color: #FFFFFF;
+  box-shadow: 0 8px 24px -8px rgba(217, 119, 6, 0.5);
+}
+
+/* Tabs */
+:root.light .tact-tabs {
+  background: #FFFFFF;
+  border-color: #CBD5E1;
+}
+:root.light .tact-tab { color: #475569; }
+:root.light .tact-tab:hover { color: #0F172A; background: #FFFBEB; }
+:root.light .tact-tab[data-active="true"] {
+  background: #D97706;
+  color: #FFFFFF;
+  box-shadow: 0 2px 8px -2px rgba(217, 119, 6, 0.4);
+}
+
+/* Chips */
+:root.light .tact-chip {
+  background: #FFFFFF;
+  border-color: #94A3B8;
+  color: #334155;
+}
+:root.light .tact-chip[data-variant="cyan"] {
+  background: #ECFEFF;
+  border-color: #D97706;
+  color: #92400E;
+}
+:root.light .tact-chip[data-variant="amber"] {
+  background: #FEF3C7;
+  border-color: #B45309;
+  color: #78350F;
+}
+:root.light .tact-chip[data-variant="red"] {
+  background: #FEE2E2;
+  border-color: #B91C1C;
+  color: #7F1D1D;
+}
+:root.light .tact-chip[data-variant="green"] {
+  background: #D1FAE5;
+  border-color: #047857;
+  color: #064E3B;
+}
+
+/* Empty states */
+:root.light .tact-empty-icon {
+  border-color: #94A3B8;
+  color: #64748B;
+}
+:root.light .tact-empty-title { color: #0F172A; }
+:root.light .tact-empty-desc { color: #475569; }
+
+/* Sidebar */
+:root.light aside {
+  background: #FFFFFF !important;
+  border-right: 1px solid #CBD5E1 !important;
+}
+:root.light aside button,
+:root.light aside span,
+:root.light aside div {
+  color: #1E293B !important;
+}
+:root.light aside button[data-active="true"] {
+  background: #D97706 !important;
+  color: #FFFFFF !important;
+}
+:root.light aside button[data-active="true"] span {
+  color: #FFFFFF !important;
+}
+
+/* Topbar (breadcrumb nav) */
+:root.light nav[aria-label="breadcrumb"] {
+  background: #FFFFFF !important;
+  border-bottom: 1px solid #CBD5E1 !important;
+}
+:root.light nav[aria-label="breadcrumb"] button { color: #334155 !important; }
+:root.light nav[aria-label="breadcrumb"] button:hover { background: #FFFBEB !important; color: #D97706 !important; }
+
+/* Filter bar */
+:root.light .tact-filter-bar {
+  background: #FFFFFF;
+  border-color: #CBD5E1;
+}
+:root.light .tact-filter-group-pills {
+  background: #F1F5F9;
+  border-color: #CBD5E1;
+}
+:root.light .tact-filter-pill { color: #334155; }
+:root.light .tact-filter-pill:hover { background: #FFFFFF; color: #0F172A; }
+:root.light .tact-filter-pill[data-active="true"] {
+  background: #D97706;
+  border-color: #D97706;
+  color: #FFFFFF;
+  text-shadow: none;
+  box-shadow: 0 2px 8px -2px rgba(217, 119, 6, 0.5);
+}
+:root.light .tact-filter-pill-count {
+  background: rgba(15, 23, 42, 0.1);
+  color: #475569;
+}
+:root.light .tact-filter-active-chip {
+  background: #ECFEFF;
+  border-color: #D97706;
+  color: #92400E;
+}
+
+/* Kbd chip */
+:root.light .tact-kbd {
+  background: #FFFFFF;
+  border-color: #94A3B8;
+  color: #334155;
+  box-shadow: inset 0 -2px 0 #CBD5E1;
+}
+
+/* Select dropdown */
+:root.light .tact-select-trigger {
+  background: #FFFFFF;
+  border-color: #94A3B8;
+  color: #0F172A;
+}
+:root.light .tact-select-popover {
+  background: #FFFFFF;
+  border-color: #D97706;
+  box-shadow: 0 24px 48px -12px rgba(15, 23, 42, 0.2);
+}
+:root.light .tact-select-option { color: #0F172A; }
+:root.light .tact-select-option-highlighted {
+  background: #ECFEFF;
+  color: #D97706;
+}
+
+/* Smooth image skeleton */
+:root.light .smooth-img { background: #F1F5F9; }
+:root.light .smooth-img-skel {
+  background: linear-gradient(135deg, #FEF3C7 0%, #F1F5F9 100%);
+}
+
+/* Corner brackets — switch to teal in light mode */
+:root.light .tact-corner { border-color: #D97706 !important; }
+
+/* Modal in light mode */
+:root.light [role="dialog"] {
+  /* dialog backdrop is the same — body content auto-adapts */
+}
+:root.light .tact-brackets-4 .tact-corner { border-color: #D97706; }
+
+/* Widget chrome in light mode */
+:root.light .widget {
+  background: #FFFFFF;
+  border-color: #CBD5E1;
+}
+:root.light .widget-header {
+  background: #FFFBEB;
+  border-bottom-color: #CBD5E1;
+}
+:root.light .widget-header-title { color: #0F172A; }
+
+/* ─── Sidebar collapse toggle — theme-aware ─── */
+.iris-sidebar-toggle {
+  position: absolute;
+  top: 50%;
+  right: -13px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--tact-cyan-dim);
+  background: var(--tact-bg);
+  color: var(--tact-text-mid);
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 9999;
+  box-shadow: 0 0 12px -2px rgba(var(--tact-accent-rgb, 0, 240, 255), 0.3);
+}
+.iris-sidebar-toggle:hover {
+  background: rgba(var(--tact-accent-rgb, 0, 240, 255), 0.12);
+  color: var(--tact-cyan-bright);
+  border-color: var(--tact-cyan);
+  box-shadow: 0 0 16px -2px rgba(var(--tact-accent-rgb, 0, 240, 255), 0.5);
+}
+:root.light .iris-sidebar-toggle {
+  background: #FFFFFF;
+  border-color: #D97706;
+  color: #475569;
+}
+:root.light .iris-sidebar-toggle:hover {
+  background: #ECFEFF;
+  color: #D97706;
+  border-color: #D97706;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   FILTER BAR — grouped icon-pill filters with active state
+   ═══════════════════════════════════════════════════════════ */
+.tact-filter-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  background: linear-gradient(180deg, hsl(var(--card) / 0.6) 0%, hsl(var(--card) / 0.6) 100%);
+  border: 1px solid hsl(var(--border) / 0.25);
+  position: relative;
+}
+
+.tact-filter-bar::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 16px;
+  right: 16px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, rgba(var(--tact-accent-rgb, 0, 240, 255), 0.4) 50%, transparent 100%);
+  pointer-events: none;
+}
+
+.tact-filter-leading,
+.tact-filter-trailing {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.tact-filter-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1;
+  min-width: 0;
+}
+
+@media (min-width: 1024px) {
+  .tact-filter-bar {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 12px 16px;
+  }
+  .tact-filter-groups {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 24px;
+    flex: 1;
+  }
+}
+
+.tact-filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tact-filter-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 9px;
+  font-weight: 700;
+  color: hsl(var(--muted-foreground));
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+.tact-filter-group-head svg {
+  color: var(--tact-cyan-bright, hsl(var(--primary)));
+}
+
+.tact-filter-group-pills {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  background: hsl(var(--card) / 0.5);
+  border: 1px solid hsl(var(--border) / 0.3);
+  padding: 3px;
+}
+
+.tact-filter-pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 30px;
+  min-width: 88px;
+  padding: 0 14px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: hsl(var(--muted-foreground));
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+  white-space: nowrap;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.tact-filter-pill:hover {
+  background: rgba(var(--tact-accent-rgb, 0, 240, 255), 0.06);
+  color: hsl(var(--foreground));
+}
+
+/* ANPR filter row: tighten pills + prevent the pill row from wrapping so
+   All / 2W / 4W / Auto / Truck / Bus all sit on one line, and stop the
+   group from wrapping under the leading fields on mid-width screens. */
+.anpr-filter-bar .tact-filter-pill {
+  min-width: 0;
+  padding: 0 10px;
+}
+.anpr-filter-bar .tact-filter-group-pills {
+  flex-wrap: nowrap;
+}
+
+.tact-filter-pill[data-active="true"] {
+  background: linear-gradient(180deg, rgba(var(--tact-accent-rgb, 0, 240, 255), 0.18) 0%, rgba(var(--tact-accent-rgb, 0, 240, 255), 0.08) 100%);
+  border-color: rgba(var(--tact-accent-rgb, 0, 240, 255), 0.5);
+  color: var(--tact-cyan-bright, hsl(var(--primary)));
+  box-shadow: 0 0 16px -4px rgba(var(--tact-accent-rgb, 0, 240, 255), 0.4);
+  font-weight: 600;
+}
+
+.tact-filter-pill[data-active="true"] svg {
+  filter: drop-shadow(0 0 4px rgba(var(--tact-accent-rgb, 0, 240, 255), 0.6));
+}
+
+.tact-filter-pill-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 5px;
+  margin-left: 2px;
+  background: hsl(var(--border) / 0.4);
+  color: hsl(var(--foreground));
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  border-radius: 0;
+}
+
+.tact-filter-pill[data-active="true"] .tact-filter-pill-count {
+  background: rgba(var(--tact-accent-rgb, 0, 240, 255), 0.3);
+  color: var(--tact-cyan-bright, hsl(var(--primary)));
+}
+
+/* Active filters strip */
+.tact-filter-active-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 12px;
+  border-top: 1px solid hsl(var(--border) / 0.25);
+  width: 100%;
+}
+
+.tact-filter-active-label {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 9px;
+  color: hsl(var(--muted-foreground));
+  letter-spacing: 0.2em;
+  margin-right: 4px;
+}
+
+.tact-filter-active-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 8px;
+  background: rgba(var(--tact-accent-rgb, 0, 240, 255), 0.1);
+  border: 1px solid rgba(var(--tact-accent-rgb, 0, 240, 255), 0.4);
+  color: var(--tact-cyan-bright, hsl(var(--primary)));
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.tact-filter-active-chip:hover {
+  background: rgba(255, 42, 42, 0.1);
+  border-color: rgba(255, 42, 42, 0.5);
+  color: #fca5a5;
+}
+
+.tact-filter-active-chip-label { opacity: 0.7; }
+.tact-filter-active-chip-value { font-weight: 700; }
+
+.tact-filter-active-clear {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid rgba(255, 42, 42, 0.3);
+  color: #fca5a5;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  height: 22px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.tact-filter-active-clear:hover {
+  background: rgba(255, 42, 42, 0.1);
+  border-color: rgba(255, 42, 42, 0.5);
+}
+
+/* Light mode */
+:root.light .tact-filter-bar {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.7) 0%, rgba(244, 248, 250, 0.7) 100%);
+  border-color: rgba(8, 95, 115, 0.18);
+}
+:root.light .tact-filter-group-pills {
+  background: rgba(255, 255, 255, 0.6);
+  border-color: rgba(8, 95, 115, 0.2);
+}
+:root.light .tact-filter-pill {
+  color: #475569;
+}
+:root.light .tact-filter-pill:hover {
+  background: rgba(8, 145, 178, 0.06);
+  color: #0F1F26;
+}
+:root.light .tact-filter-pill[data-active="true"] {
+  background: linear-gradient(180deg, rgba(8, 145, 178, 0.18) 0%, rgba(8, 145, 178, 0.08) 100%);
+  border-color: rgba(8, 145, 178, 0.5);
+  color: #D97706;
+  box-shadow:
+    inset 0 0 0 1px rgba(8, 145, 178, 0.2),
+    0 0 16px -4px rgba(8, 145, 178, 0.3);
+}
+:root.light .tact-filter-active-chip {
+  background: rgba(8, 145, 178, 0.1);
+  border-color: rgba(8, 145, 178, 0.4);
+  color: #D97706;
+}
+:root.light .tact-filter-pill-count {
+  background: rgba(8, 95, 115, 0.15);
+  color: #475569;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   FULL-HEIGHT / FULL-WIDTH CONSISTENCY
+   Force every page child to fill the available space and
+   center its empty states within the parent
+   ═══════════════════════════════════════════════════════════ */
+
+/* Empty state inside tact-page should center within the available area */
+.tact-page .tact-empty,
+.tact-page [class*="flex-1"][class*="items-center"][class*="justify-center"] {
+  flex: 1 1 auto;
+  min-height: 320px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Common dashboard root patterns → fill the parent (no flex-direction override) */
+.tact-page > .tact-page-content > .min-h-full,
+.tact-page > .tact-page-content > [class*="h-full"],
+.tact-page > .tact-page-content > [class*="min-h-screen"] {
+  min-height: 100% !important;
+  flex: 1 1 auto !important;
+}
+
+/* Generic dashboard content wrappers — pad responsively, fill width */
+.tact-page-content {
+  padding: 0;
+}
+
+/* Empty state wrappers (the bg-zinc-900/30 stat cards in dashboards stay normal) */
+.tact-page .tact-empty {
+  padding: 64px 24px;
+  min-height: 360px;
+}
+.tact-page .tact-empty-icon {
+  width: 64px;
+  height: 64px;
+}
+.tact-page .tact-empty-icon svg {
+  width: 28px;
+  height: 28px;
+}
+.tact-page .tact-empty-title {
+  font-size: 13px;
+}
+
+/* Sticky positioned content fills correctly */
+.tact-page .sticky { z-index: 5; }
+
+/* Mobile: nothing special needed — Tailwind handles flex-col by default */
+
+
+/* ═══════════════════════════════════════════════════════════
+   HOST-RADIUS LAYER — tactical primitives adopt the host design
+   language (rounded-xl cards / rounded-lg controls / rounded-md
+   chips) so irisdrone pages blend with the rest of IRIS.
+   Appended last so it wins the cascade (incl. earlier !important
+   square rules on selects/inputs).
+   ═══════════════════════════════════════════════════════════ */
+.tact-card,
+.tact-stat,
+.tact-empty-icon,
+.tact-filter-bar {
+  border-radius: 0.75rem !important;
+}
+.tact-input,
+.tact-btn,
+.tact-tabs,
+.tact-select-trigger,
+.tact-select-popover,
+.tact-select-search-input,
+.tact-filter-group-pills,
+.tact-page select,
+input.flex.h-10,
+textarea.flex {
+  border-radius: 0.5rem !important;
+}
+.tact-tab,
+.tact-chip,
+.tact-select-option,
+.tact-filter-pill,
+.tact-filter-active-chip,
+.tact-filter-active-clear,
+.tact-filter-pill-count,
+.tact-skeleton {
+  border-radius: 0.375rem !important;
+}

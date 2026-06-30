@@ -1,0 +1,29 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+
+# Application Data (Mounted via volumes, don't build into image)
+data/
+output/
+uploads/
+logs/
+
+# Local configuration
+.env
+venv/
+env/
+
+# Large files
+*.mp4
+*.avi
+*.mov
+
+# IDE
+.vscode
+.idea

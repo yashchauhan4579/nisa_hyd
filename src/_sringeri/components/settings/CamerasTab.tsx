@@ -1,0 +1,179 @@
+import { useState, useEffect, useMemo } from 'react';
+import { apiClient, type Device } from '@sringeri/lib/api';
+import { CameraConfigModal } from '@sringeri/components/cameras/CameraView';
+import { Camera, Plus, Pencil, MapPin, Loader2, Search } from 'lucide-react';
+
+function analyticsBadges(config: Record<string, any> | undefined): string[] {
+  const services = config?.services;
+  if (!Array.isArray(services)) return [];
+  return services
+    .filter((s: any) => s?.enabled)
+    .map((s: any) => {
+      const code = String(s?.code || '').toLowerCase();
+      if (code === 'anpr_vcc' || code === 'anpr-vcc') return 'ANPR/VCC';
+      if (code === 'crowd' || code === 'crowd-counting' || code === 'crowd-flow') return 'Crowd';
+      if (code === 'frs' || code === 'a-6') return 'FRS';
+      return code.toUpperCase();
+    });
+}
+
+export function CamerasTab() {
+  const [cameras, setCameras] = useState<Device[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [editing, setEditing] = useState<Device | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+
+  const fetchCameras = async () => {
+    setLoading(true);
+    try {
+      const devices = await apiClient.getDevices({ type: 'CAMERA' }) as Device[];
+      setCameras(devices);
+    } catch (err) {
+      console.error('CamerasTab: failed to fetch cameras', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchCameras(); }, []);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return cameras;
+    return cameras.filter(c =>
+      c.name.toLowerCase().includes(q) ||
+      (c.zoneId ?? '').toLowerCase().includes(q) ||
+      (c.rtspUrl ?? '').toLowerCase().includes(q)
+    );
+  }, [cameras, search]);
+
+  const openAdd = () => { setEditing(null); setModalOpen(true); };
+  const openEdit = (cam: Device) => { setEditing(cam); setModalOpen(true); };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-foreground">Cameras</h2>
+          <p className="text-sm text-muted-foreground">
+            Add, edit and configure RTSP cameras and their analytics (ANPR/VCC, Crowd, FRS).
+          </p>
+        </div>
+        <button
+          onClick={openAdd}
+          className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-[var(--accent-color)] text-white text-sm font-medium hover:opacity-90 transition"
+        >
+          <Plus className="w-4 h-4" />
+          Add Camera
+        </button>
+      </div>
+
+      <div className="relative">
+        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by name, zone, or RTSP URL"
+          className="w-full pl-9 pr-3 py-2 rounded-md border border-white/10 bg-white/5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[var(--accent-color)]/40"
+        />
+      </div>
+
+      <div className="rounded-lg border border-white/10 bg-white/2 overflow-hidden">
+        {loading ? (
+          <div className="flex items-center justify-center gap-2 py-10 text-muted-foreground text-sm">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Loading cameras…
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 gap-2">
+            <Camera className="w-8 h-8 text-muted-foreground/40" />
+            <p className="text-sm text-muted-foreground">
+              {cameras.length === 0 ? 'No cameras configured yet.' : 'No cameras match the search.'}
+            </p>
+            {cameras.length === 0 && (
+              <button
+                onClick={openAdd}
+                className="mt-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-md border border-[var(--accent-color)]/40 text-[var(--accent-color)] text-sm hover:bg-[var(--accent-color)]/10"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add your first camera
+              </button>
+            )}
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-white/3 text-muted-foreground text-xs uppercase tracking-wide">
+              <tr>
+                <th className="text-left px-4 py-2 font-medium">Name</th>
+                <th className="text-left px-4 py-2 font-medium">Zone</th>
+                <th className="text-left px-4 py-2 font-medium">Analytics</th>
+                <th className="text-left px-4 py-2 font-medium">Status</th>
+                <th className="text-left px-4 py-2 font-medium">RTSP</th>
+                <th className="text-right px-4 py-2 font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((cam) => {
+                const badges = analyticsBadges(cam.config);
+                const online = cam.isOnline ?? (cam.status === 'ACTIVE');
+                return (
+                  <tr key={cam.id} className="border-t border-white/5 hover:bg-white/3">
+                    <td className="px-4 py-3 text-foreground font-medium">{cam.name}</td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {cam.zoneId ? (
+                        <span className="inline-flex items-center gap-1">
+                          <MapPin className="w-3 h-3" />
+                          {cam.zoneId}
+                        </span>
+                      ) : <span className="text-muted-foreground/50">—</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        {badges.length === 0 ? (
+                          <span className="text-muted-foreground/50">none</span>
+                        ) : badges.map((b) => (
+                          <span key={b} className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[var(--accent-color)]/15 text-[var(--accent-color)]">
+                            {b}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center gap-1.5 text-xs ${online ? 'text-emerald-400' : 'text-zinc-500'}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${online ? 'bg-emerald-400' : 'bg-zinc-500'}`} />
+                        {online ? 'online' : 'offline'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground font-mono text-xs truncate max-w-[260px]" title={cam.rtspUrl ?? ''}>
+                      {cam.rtspUrl ?? <span className="text-muted-foreground/40">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={() => openEdit(cam)}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-white/5"
+                      >
+                        <Pencil className="w-3 h-3" />
+                        Edit
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <CameraConfigModal
+        open={modalOpen}
+        camera={editing}
+        onClose={() => setModalOpen(false)}
+        onSaved={() => {
+          setModalOpen(false);
+          fetchCameras();
+        }}
+      />
+    </div>
+  );
+}

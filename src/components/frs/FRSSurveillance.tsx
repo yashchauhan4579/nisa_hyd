@@ -1,0 +1,744 @@
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { apiClient, type FRSMatch, type Person } from '@sringeri/lib/api';
+import { cacheGet, cacheSet } from '@/lib/persistentCache';
+import { SmoothImg } from '@/components/ui/smooth-img';
+import { ScanFace, UserCheck, UserX, Users, Radio, ShieldAlert, Search as SearchIcon, Camera, Plus, X, Clock, Activity, RefreshCw } from 'lucide-react';
+import { BBoxCrop } from './BBoxCrop';
+
+// Full FRS console for our deployment (Channel3) — mirrors the feature set of 201:8444/frs
+// (CrowdFRSPage) redesigned in our amber command-center style. Self-contained + untracked
+// so a git reset can't revert it. War-test mode: no watchlist yet → faces show as Unknown.
+
+type Tab = 'live' | 'watchlist' | 'unknown' | 'search' | 'identified' | 'alerts' | 'demographics';
+const TABS: { id: Tab; label: string; icon: any }[] = [
+  { id: 'live', label: 'Live', icon: Radio },
+  { id: 'watchlist', label: 'Watchlist', icon: ShieldAlert },
+  { id: 'unknown', label: 'Unknown', icon: UserX },
+  { id: 'search', label: 'Search', icon: SearchIcon },
+  { id: 'identified', label: 'Identified', icon: UserCheck },
+  { id: 'alerts', label: 'Alerts', icon: ScanFace },
+];
+const istTime = (s: string) => { try { return new Date(s).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' }); } catch { return ''; } };
+const istDate = (s: string) => { try { return new Date(s).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }); } catch { return ''; } };
+const nameOf = (d: FRSMatch) => (d as any).person?.name || ''; // '' when unknown (no "Unknown" label)
+const timeAgo = (s: string) => { const d = (Date.now() - new Date(s).getTime()) / 1000; if (isNaN(d)) return ''; if (d < 60) return `${Math.floor(d)}s ago`; if (d < 3600) return `${Math.floor(d / 60)}m ago`; return `${Math.floor(d / 3600)}h ago`; };
+const isUnknown = (d: FRSMatch) => !d.personId && !(d as any).person;
+const personName = (d: FRSMatch) => (d as any).person?.name || (isUnknown(d) ? 'Unknown' : 'Match');
+const todayStartISO = () => { const n = new Date(); const ist = new Date(n.getTime() + 19800000); ist.setUTCHours(0, 0, 0, 0); return new Date(ist.getTime() - 19800000).toISOString(); };
+// Age + Gender (InsightFace genderage — an ESTIMATE; worse on angled/night CCTV, so shown approximate).
+const demo = (d: FRSMatch) => { const m: any = (d as any).metadata || {}; const g = (m.gender === 'M' || m.gender === 'F') ? m.gender : null; const a = (typeof m.age === 'number' && m.age > 0) ? m.age : null; const n = (typeof m.samples === 'number' && m.samples > 1) ? m.samples : null; return { g, a, n }; };
+const genderColor = (g: string | null) => (g === 'M' ? '#38bdf8' : g === 'F' ? '#f472b6' : '#a1a1aa');
+const initials = (n: string) => n.trim().split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase() ?? '').join('') || '?';
+// Card/grid visual for a detection: the FULL annotated frame (operator
+// preference — cropped grid cards were rejected). Face crops appear only in
+// the viewer's bottom-right inset (BBoxCrop).
+function FaceThumb({ d, imgClass, icon, onBroken }: { d: FRSMatch; imgClass: string; icon?: React.ReactNode; onBroken?: () => void }) {
+  const iconFallback = <div className="w-full h-full grid place-items-center text-zinc-700">{icon ?? <ScanFace className="w-8 h-8 opacity-30" />}</div>;
+  const src = d.faceSnapshotUrl || d.fullSnapshotUrl;
+  return src
+    ? <SmoothImg src={src} containerClassName="w-full h-full" className={imgClass} alt="" onError={onBroken} />
+    : iconFallback;
+}
+const ageBand = (a: number) => (a < 13 ? 'Child' : a < 20 ? 'Teen' : a < 35 ? 'Young' : a < 55 ? 'Adult' : 'Senior');
+const AGE_BANDS = [
+  { key: 'Child', label: '0-12', color: '#22c55e' }, { key: 'Teen', label: '13-19', color: '#84cc16' },
+  { key: 'Young', label: '20-34', color: '#f59e0b' }, { key: 'Adult', label: '35-54', color: '#f97316' },
+  { key: 'Senior', label: '55+', color: '#ef4444' },
+];
+
+export function FRSSurveillance() {
+  const [tab, setTab] = useState<Tab>('live');
+  // Seed from the reload-surviving cache for an instant repaint, then revalidate.
+  const detsSeed = cacheGet<FRSMatch[]>('frs:dets');
+  const personsSeed = cacheGet<Person[]>('frs:persons');
+  const [dets, setDets] = useState<FRSMatch[]>(detsSeed?.data ?? []);
+  const [persons, setPersons] = useState<Person[]>(personsSeed?.data ?? []);
+  const [loading, setLoading] = useState(!detsSeed);
+  const [enrollOpen, setEnrollOpen] = useState(false);
+  const [identifyTarget, setIdentifyTarget] = useState<FRSMatch | null>(null);
+  const [selected, setSelected] = useState<FRSMatch | null>(null); // sticky viewer selection (Live tab)
+  const [viewTarget, setViewTarget] = useState<FRSMatch | null>(null); // fullscreen viewer (Unknown/Identified tabs)
+  const [toast, setToast] = useState<{ msg: string; kind: 'ok' | 'err' } | null>(null);
+  const [wlBusy, setWlBusy] = useState(false);
+  const toastTimer = useRef<any>(null);
+  const showToast = useCallback((msg: string, kind: 'ok' | 'err' = 'ok') => {
+    setToast({ msg, kind });
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 3800);
+  }, []);
+  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
+
+  const loadDets = useCallback(async () => {
+    try {
+      // Demo site (~2 days of data): no time filter — fetch all detections.
+      const [unk, kn] = await Promise.all([
+        apiClient.getFRSDetections({ unknown: true, limit: 1500 }).catch(() => [] as FRSMatch[]),
+        apiClient.getFRSDetections({ unknown: false, limit: 1500 }).catch(() => [] as FRSMatch[]),
+      ]);
+      const d = [...(unk || []), ...(kn || [])].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      setDets(d);
+      cacheSet('frs:dets', d);
+    } catch { /* */ } finally { setLoading(false); }
+  }, []);
+  const loadPersons = useCallback(async () => { try { const p = await apiClient.getPersons() || []; setPersons(p); cacheSet('frs:persons', p); } catch { /* */ } }, []);
+
+  useEffect(() => { loadDets(); loadPersons(); }, [loadDets, loadPersons]);
+  useEffect(() => { const id = setInterval(loadDets, 15000); return () => clearInterval(id); }, [loadDets]);
+
+  const [broken, setBroken] = useState<Set<string>>(new Set()); // detection ids whose image failed to load (hide them)
+  const markBroken = useCallback((id: any) => setBroken(p => { if (p.has(String(id))) return p; const n = new Set(p); n.add(String(id)); return n; }), []);
+  const shownDets = useMemo(() => dets.filter(d => !broken.has(String(d.id))), [dets, broken]);
+  const unknownDets = useMemo(() => shownDets.filter(isUnknown), [shownDets]);
+  const knownDets = useMemo(() => shownDets.filter(d => !isUnknown(d)), [shownDets]);
+  const demoStats = useMemo(() => {
+    let m = 0, f = 0, withAge = 0, ageSum = 0; const bands: Record<string, number> = { Child: 0, Teen: 0, Young: 0, Adult: 0, Senior: 0 };
+    shownDets.forEach(d => { const { g, a } = demo(d); if (g === 'M') m++; else if (g === 'F') f++; if (a) { bands[ageBand(a)]++; withAge++; ageSum += a; } });
+    return { m, f, total: m + f, bands, withAge, avgAge: withAge ? Math.round(ageSum / withAge) : 0 };
+  }, [shownDets]);
+  const afterEnroll = () => { loadPersons(); loadDets(); };
+
+  // Promote an already-identified person to the high-alert watchlist. FRS has no
+  // separate "watchlisted" flag — every enrolled person is on the watchlist — so
+  // "adding" means escalating category=suspect / threatLevel=high.
+  const addToWatchlist = useCallback(async (d: FRSMatch) => {
+    const pid = (d as any).person?.id || d.personId;
+    const pname = nameOf(d) || 'Person';
+    if (!pid) { showToast('No linked person to add', 'err'); return; }
+    setWlBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append('category', 'suspect');
+      fd.append('threatLevel', 'high');
+      await apiClient.updatePerson(String(pid), fd);
+      showToast(`${pname} added to watchlist · high alert`);
+      setViewTarget(null);
+      loadPersons(); loadDets();
+    } catch {
+      showToast('Could not add to watchlist — try again', 'err');
+    } finally { setWlBusy(false); }
+  }, [showToast, loadPersons, loadDets]);
+
+  return (
+    <div className="h-full w-full flex flex-col overflow-hidden bg-zinc-950 text-zinc-100">
+      {/* Header */}
+      <div className="shrink-0 p-4 pb-0">
+        <div className="rounded-2xl border border-white/10 relative bg-card z-30">
+          <div className="absolute inset-0 rounded-2xl overflow-hidden opacity-[0.06] pointer-events-none" style={{ backgroundImage: 'repeating-linear-gradient(45deg,var(--brand-accent) 0 1px,transparent 1px 14px)' }} />
+          <div className="relative px-5 py-3 flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-lg bg-amber-600/20 border border-amber-500/40 flex items-center justify-center shrink-0"><ScanFace className="w-5 h-5 text-amber-300" /></div>
+              <div className="min-w-0">
+                <p className="text-[9px] font-semibold text-amber-300/80 uppercase tracking-[0.2em]">IRIS Command Center · Channel 3</p>
+                <h1 className="text-sm font-bold text-white tracking-tight truncate">Face Recognition</h1>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 text-[11px]">
+              <Stat label="Faces" v={shownDets.length} c="text-amber-300" />
+              <Stat label="Matches" v={knownDets.length} c="text-emerald-400" />
+              <Stat label="Unknown" v={unknownDets.length} c="text-zinc-300" />
+              <Stat label="Watchlist" v={persons.length} c="text-violet-400" />
+            </div>
+          </div>
+          {/* Tabs */}
+          <div className="relative px-3 pb-2 flex gap-1 flex-wrap">
+            {TABS.map(t => { const Icon = t.icon; const active = tab === t.id; return (
+              <button key={t.id} onClick={() => setTab(t.id)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold rounded-lg transition-all ${active ? 'bg-amber-500/20 text-amber-200 border border-amber-500/40' : 'text-zinc-500 hover:text-zinc-300 border border-transparent'}`}>
+                <Icon className="w-3.5 h-3.5" />{t.label}
+              </button>
+            ); })}
+          </div>
+        </div>
+      </div>
+
+      {/* Body */}
+      <div className="flex-1 min-h-0 overflow-y-auto scroll-on-hover p-4">
+        {tab === 'live' && (
+          <div className="flex gap-4 h-full">
+            {/* Left — live detection sidebar (auto-updating, newest first) */}
+            <div className="w-[270px] shrink-0 flex flex-col rounded-2xl border border-white/8 bg-zinc-900/60 overflow-hidden">
+              <div className="px-4 py-3 border-b border-white/5 flex items-center gap-2 shrink-0">
+                <span className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" /><span className="relative inline-flex rounded-full h-2 w-2 bg-amber-400" /></span>
+                <p className="text-sm font-semibold text-zinc-100">Live Detections</p>
+                <span className="text-[10px] text-zinc-500 ml-auto tabular-nums">{shownDets.length}</span>
+              </div>
+              <div className="flex-1 overflow-y-auto scroll-on-hover p-2 space-y-2">
+                {shownDets.length === 0
+                  ? <div className="py-10 text-center text-sm text-zinc-600">No faces yet…</div>
+                  : shownDets.slice(0, 150).map(d => <SidebarItem key={d.id} d={d} active={selected ? selected.id === d.id : d.id === shownDets[0].id} onClick={() => setSelected(d)} onBroken={() => markBroken(d.id)} />)}
+              </div>
+            </div>
+            {/* Right — big sticky viewer */}
+            <div className="flex-1 min-w-0">
+              {(selected || shownDets[0])
+                ? <DetailViewer d={selected || shownDets[0]} onBroken={(id: any) => markBroken(id)} />
+                : <Panel title="Detection Viewer" icon={<ScanFace className="w-4 h-4 text-amber-300" />}><Empty msg="Detections appear on the left — click one to view it large here. It stays until you pick another." /></Panel>}
+            </div>
+          </div>
+        )}
+
+        {tab === 'demographics' && (
+          demoStats.total === 0
+            ? <Panel title="Demographics" icon={<Users className="w-4 h-4 text-amber-300" />}><Empty msg="No age/gender data yet — newly detected faces will populate this as they pass Channel 3." /></Panel>
+            : (() => {
+                const mp = Math.round((demoStats.m / (demoStats.total || 1)) * 100);
+                const topBand = AGE_BANDS.reduce((a, b) => (demoStats.bands[b.key] > demoStats.bands[a.key] ? b : a), AGE_BANDS[0]);
+                const bandMax = Math.max(1, ...AGE_BANDS.map(b => demoStats.bands[b.key]));
+                return (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+                      <Kpi label="Faces Analyzed" value={demoStats.total.toLocaleString()} sub="gender estimated" icon={<Users className="w-5 h-5" />} gradient="from-amber-500/20 to-amber-500/5" border="border-amber-500/30" glow="rgba(var(--brand-accent-rgb),0.18)" text="text-amber-200" />
+                      <Kpi label="Male" value={`${mp}%`} sub={`${demoStats.m} detected`} icon={<span className="text-lg leading-none">♂</span>} gradient="from-sky-500/20 to-sky-500/5" border="border-sky-500/30" glow="rgba(56,189,248,0.18)" text="text-sky-300" />
+                      <Kpi label="Female" value={`${100 - mp}%`} sub={`${demoStats.f} detected`} icon={<span className="text-lg leading-none">♀</span>} gradient="from-pink-500/20 to-pink-500/5" border="border-pink-500/30" glow="rgba(244,114,182,0.18)" text="text-pink-300" />
+                      <Kpi label="Avg Age" value={`~${demoStats.avgAge}`} sub={`${demoStats.withAge} with age`} icon={<Activity className="w-5 h-5" />} gradient="from-violet-500/20 to-violet-500/5" border="border-violet-500/30" glow="rgba(168,85,247,0.18)" text="text-violet-300" />
+                    </div>
+                    <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+                      <div className="lg:col-span-2">
+                        <Panel title="Gender Split" icon={<Users className="w-4 h-4 text-amber-300" />}>
+                          <div className="flex flex-col items-center gap-5 py-4">
+                            <div className="relative w-44 h-44 rounded-full" style={{ background: `conic-gradient(#38bdf8 0% ${mp}%, #f472b6 ${mp}% 100%)`, boxShadow: '0 0 55px rgba(56,189,248,0.18)' }}>
+                              <div className="absolute inset-0 rounded-full" style={{ boxShadow: 'inset 0 0 30px rgba(0,0,0,0.5)' }} />
+                              <div className="absolute inset-[22px] rounded-full bg-zinc-950 grid place-items-center border border-white/5"><div className="text-center"><div className="text-4xl font-black text-white tabular-nums">{demoStats.total}</div><div className="text-[9px] text-zinc-500 uppercase tracking-[0.2em]">faces</div></div></div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3 w-full">
+                              <div className="rounded-xl border border-sky-500/25 bg-sky-500/5 p-3 text-center"><div className="text-2xl font-black text-sky-300 tabular-nums">♂ {demoStats.m}</div><div className="text-[10px] text-zinc-500 mt-0.5 uppercase tracking-wider">Male · {mp}%</div></div>
+                              <div className="rounded-xl border border-pink-500/25 bg-pink-500/5 p-3 text-center"><div className="text-2xl font-black text-pink-300 tabular-nums">♀ {demoStats.f}</div><div className="text-[10px] text-zinc-500 mt-0.5 uppercase tracking-wider">Female · {100 - mp}%</div></div>
+                            </div>
+                          </div>
+                        </Panel>
+                      </div>
+                      <div className="lg:col-span-3">
+                        <Panel title="Age Distribution" icon={<Activity className="w-4 h-4 text-amber-300" />} action={demoStats.withAge ? <span className="text-[10px] text-amber-300/90 bg-amber-500/10 border border-amber-500/25 rounded-full px-2.5 py-1 font-bold">Most common · {topBand.key}</span> : undefined}>
+                          {demoStats.withAge === 0 ? <Empty msg="No age data yet." /> : (
+                            <div className="flex items-end justify-around gap-2 sm:gap-4 pt-8 pb-1" style={{ height: 280 }}>
+                              {AGE_BANDS.map(b => { const v = demoStats.bands[b.key]; const pct = demoStats.withAge ? Math.round((v / demoStats.withAge) * 100) : 0; const h = (v / bandMax) * 100; return (
+                                <div key={b.key} className="flex-1 flex flex-col items-center justify-end h-full">
+                                  <div className="text-sm font-black tabular-nums mb-1.5" style={{ color: b.color }}>{v || ''}</div>
+                                  <div className="w-full max-w-[64px] rounded-t-lg transition-all duration-700" style={{ height: `${Math.max(h, v > 0 ? 5 : 1)}%`, background: `linear-gradient(to top, ${b.color}, ${b.color}88)`, boxShadow: v > 0 ? `0 0 22px ${b.color}66` : 'none' }} />
+                                  <div className="text-[11px] text-zinc-200 mt-3 font-bold">{b.key}</div>
+                                  <div className="text-[9px] text-zinc-600">{b.label} · {pct}%</div>
+                                </div>
+                              ); })}
+                            </div>
+                          )}
+                        </Panel>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()
+        )}
+
+        {tab === 'unknown' && (
+          <Panel title={`Unknown Faces · ${unknownDets.length}`} icon={<UserX className="w-4 h-4 text-amber-300" />}>
+            <DetectionGrid dets={unknownDets.slice(0, 120)} empty="No unknown faces in this window." onClick={setViewTarget} actionLabel="Click a face to view it large, browse the strip, and Identify" onBroken={markBroken} />
+          </Panel>
+        )}
+
+        {tab === 'identified' && (
+          <Panel title={`Identified · ${knownDets.length}`} icon={<UserCheck className="w-4 h-4 text-emerald-400" />}>
+            <DetectionGrid dets={knownDets.slice(0, 120)} empty="No identified faces yet — enroll a watchlist to get matches." onClick={setViewTarget} actionLabel="Click a face to view it large and manage its watchlist status" hoverLabel="View ›" onBroken={markBroken} />
+          </Panel>
+        )}
+
+        {tab === 'alerts' && (
+          <Panel title={`Match Alerts · ${knownDets.length}`} icon={<ScanFace className="w-4 h-4 text-emerald-400" />}>
+            {knownDets.length === 0
+              ? <Empty msg="No alerts — alerts fire when a watchlisted face is matched." />
+              : <div className="space-y-2">{knownDets.slice(0, 80).map(d => (
+                  <button key={d.id} type="button" onClick={() => setViewTarget(d)}
+                    className="w-full text-left flex items-center gap-3 p-2 rounded-xl border border-emerald-500/20 bg-emerald-500/5 transition-all hover:border-emerald-500/50 hover:bg-emerald-500/10 cursor-pointer">
+                    <div className="w-12 h-12 rounded-lg overflow-hidden bg-zinc-900 shrink-0">
+                      <FaceThumb d={d} imgClass="w-full h-full object-cover" icon={<ScanFace className="w-5 h-5 opacity-30" />} />
+                    </div>
+                    <div className="flex-1 min-w-0"><div className="text-sm font-semibold text-emerald-300 truncate">{personName(d)}</div><div className="text-[10px] text-zinc-500">{d.deviceId} · {timeAgo(d.timestamp)}</div></div>
+                    {typeof d.matchScore === 'number' && <span className="text-xs font-black text-emerald-300">{Math.round(d.matchScore * 100)}%</span>}
+                    <span className="shrink-0 text-[10px] font-bold text-emerald-300/70 opacity-0 group-hover:opacity-100">view ›</span>
+                  </button>))}</div>}
+          </Panel>
+        )}
+
+        {tab === 'watchlist' && (
+          <Panel title={`Watchlist · ${persons.length} enrolled`} icon={<ShieldAlert className="w-4 h-4 text-amber-300" />}
+            action={<button onClick={() => setEnrollOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold rounded-lg bg-amber-500/20 text-amber-200 border border-amber-500/40 hover:bg-amber-500/30"><Plus className="w-3.5 h-3.5" />Enroll Person</button>}>
+            {persons.length === 0
+              ? <Empty msg="No persons enrolled yet — every face shows as Unknown. Click “Enroll Person” to add one." />
+              : <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-6 gap-4">{persons.map(p => (
+                  <div key={p.id} className="rounded-xl border border-white/10 bg-zinc-800/30 overflow-hidden">
+                    <div className="aspect-square bg-zinc-900 relative grid place-items-center">
+                      {/* Initials avatar underlay — visible when there's no photo or it 404s */}
+                      <div className="w-14 h-14 rounded-full bg-amber-500/10 border border-amber-500/20 grid place-items-center text-2xl font-black text-amber-300/80">{initials(p.name)}</div>
+                      {p.faceImageUrl && <img src={p.faceImageUrl} className="absolute inset-0 w-full h-full object-cover" alt={p.name} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />}
+                      <AddPhotoButton personId={p.id} onDone={loadPersons} />
+                    </div>
+                    <div className="px-2 py-1.5">
+                      <div className="text-[11px] font-semibold text-zinc-200 truncate">{p.name}</div>
+                      <div className="text-[9px] text-amber-400/80 truncate uppercase tracking-wide">{p.threatLevel || p.category || '—'}</div>
+                      {!p.faceImageUrl && <div className="text-[8px] text-zinc-500 truncate">no photo — tap camera to add</div>}
+                    </div>
+                  </div>))}</div>}
+          </Panel>
+        )}
+
+        {tab === 'search' && <SearchTab totalFaces={dets.length} />}
+      </div>
+
+      {/* Fullscreen viewer — big face + crop. Unknown ⇒ Identify; Identified ⇒ watchlist control. */}
+      {viewTarget && (() => {
+        const known = !isUnknown(viewTarget);
+        const p: any = (viewTarget as any).person || {};
+        const onWL = known && (p.threatLevel === 'high' || p.category === 'suspect');
+        return (
+          <div className="fixed inset-0 z-[90] bg-black/80 backdrop-blur-sm p-4 md:p-8 grid place-items-center" onClick={() => setViewTarget(null)}>
+            <div className="w-full max-w-5xl h-[84vh] relative" onClick={e => e.stopPropagation()}>
+              <DetailViewer d={viewTarget} onBroken={markBroken} />
+              <div className="absolute top-3 right-3 flex gap-2 z-20">
+                {!known ? (
+                  <button onClick={() => { setIdentifyTarget(viewTarget); setViewTarget(null); }}
+                    className="px-3 py-1.5 text-[11px] font-bold rounded-lg bg-amber-400 text-zinc-950 hover:bg-amber-300 shadow-lg">Identify ›</button>
+                ) : onWL ? (
+                  <span className="px-3 py-1.5 text-[11px] font-bold rounded-lg bg-emerald-500/20 text-emerald-200 border border-emerald-500/40 flex items-center gap-1.5"><ShieldAlert className="w-3.5 h-3.5" />On Watchlist</span>
+                ) : (
+                  <button onClick={() => addToWatchlist(viewTarget)} disabled={wlBusy}
+                    className="px-3 py-1.5 text-[11px] font-bold rounded-lg bg-amber-400 text-zinc-950 hover:bg-amber-300 shadow-lg flex items-center gap-1.5 disabled:opacity-60"><ShieldAlert className="w-3.5 h-3.5" />{wlBusy ? 'Adding…' : 'Add to Watchlist'}</button>
+                )}
+                <button onClick={() => setViewTarget(null)}
+                  className="p-1.5 rounded-lg bg-black/60 border border-white/15 text-zinc-300 hover:text-white"><X className="w-4 h-4" /></button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Transient confirmation toast (Identify / watchlist actions) */}
+      {toast && (
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[120] pointer-events-none">
+          <div className={`px-4 py-2.5 rounded-xl shadow-2xl border text-sm font-semibold flex items-center gap-2 ${toast.kind === 'err' ? 'bg-red-950/95 border-red-500/40 text-red-200' : 'bg-emerald-950/95 border-emerald-500/40 text-emerald-200'}`}>
+            {toast.kind === 'err' ? <ShieldAlert className="w-4 h-4 shrink-0" /> : <UserCheck className="w-4 h-4 shrink-0" />}
+            {toast.msg}
+          </div>
+        </div>
+      )}
+      {enrollOpen && <EnrollModal onClose={() => setEnrollOpen(false)} onDone={() => { setEnrollOpen(false); afterEnroll(); }} />}
+      {identifyTarget && <IdentifyModal target={identifyTarget} onClose={() => setIdentifyTarget(null)} onToast={showToast} onDone={() => { setIdentifyTarget(null); afterEnroll(); }} />}
+      {loading && !dets.length && <div className="absolute inset-0 grid place-items-center text-amber-400 pointer-events-none"><ScanFace className="w-10 h-10 animate-pulse" /></div>}
+    </div>
+  );
+}
+
+// ── shared bits ──────────────────────────────────────────────────────────────
+function Stat({ label, v, c }: { label: string; v: number; c: string }) {
+  return <div className="text-center"><div className={`text-lg font-black tabular-nums ${c}`}>{v.toLocaleString()}</div><div className="text-[8px] text-zinc-600 uppercase tracking-wider">{label}</div></div>;
+}
+function Kpi({ label, value, sub, icon, gradient, border, glow, text }: { label: string; value: string; sub: string; icon: React.ReactNode; gradient: string; border: string; glow: string; text: string }) {
+  return (
+    <div className={`relative rounded-2xl border ${border} bg-gradient-to-b ${gradient} p-4 overflow-hidden`} style={{ boxShadow: `0 0 24px ${glow}` }}>
+      <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'repeating-linear-gradient(0deg,#fff 0,#fff 1px,transparent 0,transparent 50%),repeating-linear-gradient(90deg,#fff 0,#fff 1px,transparent 0,transparent 50%)', backgroundSize: '24px 24px' }} />
+      <div className="relative">
+        <div className={`flex items-center gap-1.5 mb-3 ${text} opacity-80`}>{icon}<span className="text-[10px] font-semibold uppercase tracking-widest">{label}</span></div>
+        <p className={`text-3xl font-black tracking-tight tabular-nums ${text}`}>{value}</p>
+        <p className="text-[10px] text-zinc-600 mt-1 font-medium">{sub}</p>
+      </div>
+    </div>
+  );
+}
+function Panel({ title, icon, action, children }: { title: string; icon: React.ReactNode; action?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div className="rounded-2xl border border-white/8 bg-zinc-900/60 h-full flex flex-col overflow-hidden">
+      <div className="px-5 pt-3 pb-2 border-b border-white/5 flex items-center justify-between gap-2 shrink-0">
+        <div className="flex items-center gap-2"><div className="p-1.5 rounded-lg bg-amber-500/10">{icon}</div><p className="text-sm font-semibold text-zinc-100">{title}</p></div>
+        {action}
+      </div>
+      <div className="p-4 flex-1 min-h-0 overflow-y-auto scroll-on-hover">{children}</div>
+    </div>
+  );
+}
+function Empty({ msg }: { msg: string }) { return <div className="flex flex-col items-center justify-center py-12 gap-3 text-zinc-600"><ScanFace className="w-10 h-10 opacity-30" /><p className="text-sm text-zinc-500 max-w-md text-center">{msg}</p></div>; }
+
+function SidebarItem({ d, active, onClick, onBroken }: { d: FRSMatch; active: boolean; onClick: () => void; onBroken?: () => void }) {
+  const nm = nameOf(d);
+  return (
+    <button onClick={onClick} className={`relative block w-full rounded-xl overflow-hidden text-left transition-all border ${active ? 'border-amber-500/70 ring-2 ring-amber-500/30' : 'border-white/8 hover:border-white/25'}`}>
+      <div className="aspect-video bg-zinc-950">
+        {/* Full-frame view (operator preference) — crops live in the viewer inset. */}
+        {(d.faceSnapshotUrl || d.fullSnapshotUrl)
+          ? <SmoothImg src={d.faceSnapshotUrl || d.fullSnapshotUrl!} containerClassName="w-full h-full" className="w-full h-full object-cover" alt="" onError={onBroken} />
+          : <div className="w-full h-full grid place-items-center text-zinc-700"><ScanFace className="w-7 h-7 opacity-30" /></div>}
+      </div>
+      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent px-2.5 pt-5 pb-1.5">
+        <div className="text-[12px] font-bold text-white tabular-nums leading-tight" style={{ textShadow: '0 1px 4px rgba(0,0,0,0.9)' }}>{istTime(d.timestamp)}</div>
+        <div className="text-[9px] text-zinc-300">{istDate(d.timestamp)}</div>
+      </div>
+      {nm && <span className="absolute top-1.5 left-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded bg-black/60 text-emerald-300">{nm}</span>}
+    </button>
+  );
+}
+
+function DetailViewer({ d, onBroken }: { d: FRSMatch; onBroken?: (id: any) => void }) {
+  const { g, a, n } = demo(d); const known = !isUnknown(d); const col = known ? '#22c55e' : 'var(--brand-accent)';
+  const src = d.faceSnapshotUrl || d.fullSnapshotUrl;
+  // The detection bbox is in the SCENE frame's coordinate space
+  // (fullSnapshotUrl) — the edge's faceSnapshotUrl is a differently-sized
+  // padded crop, so cropping THAT with the bbox landed on roads/legs.
+  const cropSrc = d.fullSnapshotUrl || d.faceSnapshotUrl;
+  const bboxN = (d as any).metadata?.bbox_normalized;
+  return (
+    <div className="h-full flex flex-col rounded-2xl border border-amber-500/15 bg-zinc-900/60 overflow-hidden" style={{ boxShadow: '0 0 50px rgba(var(--brand-accent-rgb),0.06)' }}>
+      <div className="relative flex-1 min-h-0 bg-black grid place-items-center p-3">
+        {src
+          ? <img src={src} className="max-w-full max-h-full object-contain rounded-lg" alt="" onError={() => onBroken?.(d.id)} />
+          : <ScanFace className="w-16 h-16 text-zinc-700" />}
+        {/* Face crop of THIS detection — 300% of its bounding box, bottom-right */}
+        {cropSrc && (d.bbox || bboxN) && (
+          <div className="absolute bottom-3 right-3">
+            <p className="text-[8px] font-bold uppercase tracking-[0.25em] text-amber-300/80 mb-1 pl-0.5">Face</p>
+            <BBoxCrop src={cropSrc} bbox={d.bbox} bboxNormalized={bboxN}
+              className="w-44 h-44 rounded-xl border-2 border-amber-500/40 bg-zinc-950 shadow-[0_8px_30px_rgba(0,0,0,0.6)]"
+              fallback={<div className="w-full h-full grid place-items-center text-zinc-700"><ScanFace className="w-8 h-8 opacity-40" /></div>} />
+          </div>
+        )}
+      </div>
+      <div className="shrink-0 px-6 py-4 border-t border-white/5 flex items-end justify-between gap-4">
+        <div className="min-w-0">
+          <div className="text-2xl font-black text-white truncate">{nameOf(d) || `${istDate(d.timestamp)} · ${istTime(d.timestamp)}`}</div>
+          <div className="flex items-center gap-2 mt-2 flex-wrap">
+            {(g || a) && <span className="text-sm font-bold px-2.5 py-0.5 rounded-md" style={{ color: genderColor(g), background: `${genderColor(g)}22`, border: `1px solid ${genderColor(g)}44` }}>{g === 'M' ? 'Male' : g === 'F' ? 'Female' : ''}{a ? ` · ~${a} yrs` : ''}</span>}
+            <span className="text-[12px] text-zinc-400 font-medium">{d.deviceId}{nameOf(d) ? ` · ${istDate(d.timestamp)} · ${istTime(d.timestamp)}` : ''} · {timeAgo(d.timestamp)}</span>
+          </div>
+        </div>
+        <div className="text-right shrink-0">
+          {typeof d.confidence === 'number' && <div className="text-3xl font-black tabular-nums" style={{ color: col }}>{Math.round(d.confidence * 100)}<span className="text-base">%</span></div>}
+          <div className="text-[9px] uppercase tracking-[0.2em] text-zinc-500">{known ? 'match' : 'detection'}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DetectionGrid({ dets, empty, onClick, actionLabel, hoverLabel = 'Identify ›', onBroken }: { dets: FRSMatch[]; empty: string; onClick?: (d: FRSMatch) => void; actionLabel?: string; hoverLabel?: string; onBroken?: (id: any) => void }) {
+  if (!dets.length) return <Empty msg={empty} />;
+  return (
+    <>
+      {actionLabel && <p className="text-[11px] text-amber-400/70 mb-3 flex items-center gap-1.5"><ScanFace className="w-3.5 h-3.5" />{actionLabel}</p>}
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+        {dets.map(d => { const known = !isUnknown(d); const col = known ? '#22c55e' : 'var(--brand-accent)'; return (
+          <button key={d.id} onClick={() => onClick?.(d)} disabled={!onClick}
+            className={`group relative rounded-2xl overflow-hidden border border-white/10 bg-zinc-900 text-left transition-all duration-300 ${onClick ? 'hover:border-amber-500/50 hover:-translate-y-0.5 cursor-pointer' : ''}`}
+            style={onClick ? { } : {}}>
+            <div className="aspect-[4/3] overflow-hidden bg-zinc-950">
+              <FaceThumb d={d} imgClass="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" onBroken={() => onBroken?.(d.id)} />
+            </div>
+            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent pointer-events-none" />
+            {nameOf(d) && <span className="absolute top-2 left-2 text-[9px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full backdrop-blur-sm" style={{ color: '#86efac', background: 'rgba(0,0,0,0.55)', border: '1px solid #22c55e55' }}>{nameOf(d)}</span>}
+            {typeof d.confidence === 'number' && <span className="absolute top-2 right-2 text-[9px] font-black px-1.5 py-0.5 rounded-md bg-black/70 text-amber-300">{Math.round(d.confidence * 100)}%</span>}
+            <div className="absolute bottom-0 inset-x-0 px-2.5 py-2 text-[10px] pointer-events-none">
+              {(() => { const { g, a } = demo(d); return (g || a)
+                ? <div className="flex items-center gap-1 font-bold mb-0.5" style={{ color: genderColor(g) }}>{g === 'M' ? '♂' : g === 'F' ? '♀' : ''} {a ? `~${a}` : (g === 'M' ? 'Male' : 'Female')}</div>
+                : null; })()}
+              <div className="text-zinc-200 font-semibold tabular-nums" style={{ textShadow: '0 1px 4px rgba(0,0,0,0.9)' }}>{istDate(d.timestamp)} · {istTime(d.timestamp)}</div>
+            </div>
+            {onClick && <div className="absolute inset-0 grid place-items-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"><span className="text-[11px] font-bold text-zinc-950 bg-amber-400 px-3 py-1.5 rounded-lg shadow-lg">{hoverLabel}</span></div>}
+          </button>
+        ); })}
+      </div>
+    </>
+  );
+}
+
+// ── Enroll a new person ──────────────────────────────────────────────────────
+function EnrollModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const [form, setForm] = useState({ name: '', gender: 'unknown', height: '', category: 'person_of_interest', threatLevel: 'low', notes: '', addToWatchlist: true });
+  const [files, setFiles] = useState<File[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const submit = async () => {
+    if (!form.name) { setErr('Name required'); return; }
+    if (!files.length) { setErr('Add at least one face image'); return; }
+    setBusy(true); setErr('');
+    try {
+      const fd = new FormData();
+      fd.append('name', form.name); fd.append('gender', form.gender); fd.append('height', form.height);
+      fd.append('category', form.addToWatchlist ? 'suspect' : form.category);
+      fd.append('threatLevel', form.addToWatchlist ? 'high' : form.threatLevel);
+      fd.append('notes', form.notes);
+      files.forEach(f => fd.append('images[]', f, f.name));
+      await apiClient.createPerson(fd);
+      onDone();
+    } catch (e: any) { setErr('Enroll failed: ' + (e?.message || 'error')); setBusy(false); }
+  };
+  return <Modal title="Enroll Person" onClose={onClose}>
+    <div className="space-y-3">
+      <Field label="Name"><input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="modal-in" placeholder="Full name" /></Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Category"><select value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} className="modal-in"><option value="person_of_interest">Person of Interest</option><option value="suspect">Suspect</option><option value="vip">VIP</option><option value="staff">Staff</option></select></Field>
+        <Field label="Threat Level"><select value={form.threatLevel} onChange={e => setForm({ ...form, threatLevel: e.target.value })} className="modal-in"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></Field>
+      </div>
+      <Field label="Notes"><input value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} className="modal-in" placeholder="optional" /></Field>
+      <Field label="Face image(s)"><input type="file" accept="image/*" multiple onChange={e => setFiles(Array.from(e.target.files || []))} className="text-[11px] text-zinc-400" />{files.length > 0 && <span className="text-[10px] text-amber-300 ml-2">{files.length} selected</span>}</Field>
+      <label className="flex items-center gap-2 text-[11px] text-zinc-400"><input type="checkbox" checked={form.addToWatchlist} onChange={e => setForm({ ...form, addToWatchlist: e.target.checked })} /> Add to watchlist (high alert)</label>
+      {err && <p className="text-[11px] text-red-400">{err}</p>}
+      <div className="flex justify-end gap-2 pt-2"><button onClick={onClose} className="btn-ghost">Cancel</button><button onClick={submit} disabled={busy} className="btn-amber">{busy ? 'Enrolling…' : 'Enroll'}</button></div>
+    </div>
+  </Modal>;
+}
+
+// Canvas-crop the detection's face region (300% of bbox) from the scene frame.
+// Used so Identify enrolls/searches with the FACE, not the whole street scene.
+async function cropFaceBlob(d: FRSMatch): Promise<Blob | null> {
+  try {
+    const src = d.fullSnapshotUrl || d.faceSnapshotUrl;
+    if (!src) return null;
+    const bboxN = (d as any).metadata?.bbox_normalized;
+    const img = await new Promise<HTMLImageElement>((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; });
+    let x1: number, y1: number, x2: number, y2: number;
+    if (Array.isArray(bboxN) && bboxN.length >= 4) {
+      [x1, y1, x2, y2] = (bboxN as number[]).map(Number);
+    } else if (Array.isArray(d.bbox) && (d.bbox as number[]).length >= 4) {
+      const [a, b, c, e] = (d.bbox as number[]).map(Number);
+      if (Math.max(a, b, c, e) <= 1.5) { x1 = a; y1 = b; x2 = c; y2 = e; }
+      else { x1 = a / img.naturalWidth; y1 = b / img.naturalHeight; x2 = c / img.naturalWidth; y2 = e / img.naturalHeight; }
+    } else return null;
+    const w = x2 - x1, h = y2 - y1;
+    x1 = Math.max(0, x1 - w); y1 = Math.max(0, y1 - h);
+    x2 = Math.min(1, x2 + w); y2 = Math.min(1, y2 + h);
+    const sx = x1 * img.naturalWidth, sy = y1 * img.naturalHeight;
+    const sw = (x2 - x1) * img.naturalWidth, sh = (y2 - y1) * img.naturalHeight;
+    if (sw < 8 || sh < 8) return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(sw); canvas.height = Math.round(sh);
+    canvas.getContext('2d')!.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+    return await new Promise<Blob | null>(res => canvas.toBlob(res, 'image/jpeg', 0.9));
+  } catch { return null; }
+}
+
+// ── Identify (convert an unknown detection into a person) ─────────────────────
+function IdentifyModal({ target, onClose, onDone, onToast }: { target: FRSMatch; onClose: () => void; onDone: () => void; onToast?: (msg: string, kind?: 'ok' | 'err') => void }) {
+  const [form, setForm] = useState({ name: '', category: 'person_of_interest', threatLevel: 'low', addToWatchlist: true });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const submit = async () => {
+    if (!form.name) { setErr('Name required'); return; }
+    setBusy(true); setErr('');
+    try {
+      // Enroll the FACE crop (300% bbox window), not the whole street scene —
+      // falls back to the raw image when the bbox can't be resolved.
+      let blob = await cropFaceBlob(target);
+      if (!blob) {
+        const url = target.faceSnapshotUrl || target.fullSnapshotUrl;
+        if (!url) throw new Error('no face image');
+        blob = await (await fetch(url)).blob();
+      }
+      const fd = new FormData();
+      fd.append('images[]', blob, 'face_crop.jpg');
+      fd.append('name', form.name);
+      fd.append('category', form.addToWatchlist ? 'suspect' : form.category);
+      fd.append('threatLevel', form.addToWatchlist ? 'high' : form.threatLevel);
+      const created = await apiClient.createPerson(fd);
+      // relabel this detection's track so the backend links past sightings
+      const rl = new FormData();
+      rl.append('detectionId', String(target.id));
+      const tk = String((target as any).metadata?.track_id || (target as any).metadata?.trackId || '');
+      if (tk) rl.append('trackId', tk);
+      if (target.deviceId) rl.append('deviceId', String(target.deviceId));
+      await apiClient.addPersonEmbeddings(created.id, rl).catch(() => {});
+      onToast?.(`${form.name} identified${form.addToWatchlist ? ' · added to watchlist' : ''}`);
+      onDone();
+    } catch (e: any) { setErr('Identify failed: ' + (e?.message || 'error')); setBusy(false); }
+  };
+  return <Modal title="Identify Person" onClose={onClose}>
+    <div className="flex gap-4">
+      {(target.bbox || (target as any).metadata?.bbox_normalized) && (target.fullSnapshotUrl || target.faceSnapshotUrl)
+        ? <BBoxCrop src={target.fullSnapshotUrl || target.faceSnapshotUrl!} bbox={target.bbox} bboxNormalized={(target as any).metadata?.bbox_normalized}
+            className="w-28 h-28 rounded-xl bg-zinc-900 border border-white/10 shrink-0"
+            fallback={<div className="w-full h-full grid place-items-center text-zinc-700"><ScanFace className="w-8 h-8 opacity-40" /></div>} />
+        : <img src={target.faceSnapshotUrl || target.fullSnapshotUrl || ''} className="w-28 h-28 rounded-xl object-cover bg-zinc-900 border border-white/10 shrink-0" alt="" />}
+      <div className="flex-1 space-y-3">
+        <Field label="Name"><input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="modal-in" placeholder="Who is this?" autoFocus /></Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Category"><select value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} className="modal-in"><option value="person_of_interest">Person of Interest</option><option value="suspect">Suspect</option><option value="vip">VIP</option><option value="staff">Staff</option></select></Field>
+          <Field label="Threat"><select value={form.threatLevel} onChange={e => setForm({ ...form, threatLevel: e.target.value })} className="modal-in"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></Field>
+        </div>
+        <label className="flex items-center gap-2 text-[11px] text-zinc-400"><input type="checkbox" checked={form.addToWatchlist} onChange={e => setForm({ ...form, addToWatchlist: e.target.checked })} /> Add to watchlist</label>
+        {err && <p className="text-[11px] text-red-400">{err}</p>}
+        <div className="flex justify-end gap-2"><button onClick={onClose} className="btn-ghost">Cancel</button><button onClick={submit} disabled={busy} className="btn-amber">{busy ? 'Saving…' : 'Identify'}</button></div>
+      </div>
+    </div>
+  </Modal>;
+}
+
+// ── Search by uploaded face ──────────────────────────────────────────────────
+// Cycling-faces scanner (ported from the sringeri CrowdFRSPage search animation,
+// restyled amber): while the search runs we flick through recent face crops so
+// the operator sees the system "scanning" instead of an instant empty result.
+function SearchTab({ totalFaces = 0 }: { totalFaces?: number }) {
+  const [preview, setPreview] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [zoom, setZoom] = useState<{ url: string; title: string; sub?: string } | null>(null);
+  const [res, setRes] = useState<{ personMatches: any[]; detectionMatches: any[] } | null>(null);
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pool, setPool] = useState<string[]>([]);
+  const [cycleIdx, setCycleIdx] = useState(0);
+  const inp = useRef<HTMLInputElement>(null);
+  const lastFile = useRef<File | null>(null);
+
+  // Face-crop pool for the scanning animation (recent detections).
+  useEffect(() => {
+    let alive = true;
+    apiClient.getFRSDetections({ limit: 200 }).then(rows => {
+      if (!alive) return;
+      const urls = Array.from(new Set((rows || []).map(r => r.faceSnapshotUrl).filter(Boolean))) as string[];
+      setPool(urls);
+    }).catch(() => { /* pool stays empty — generic pulse instead */ });
+    return () => { alive = false; };
+  }, []);
+
+  // Reshuffle per search so the flicker isn't identical each time.
+  const cyclePool = useMemo(() => {
+    const a = [...pool];
+    for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+    return a;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional reshuffle on each search start
+  }, [pool, busy]);
+
+  useEffect(() => {
+    if (!busy || cyclePool.length === 0) return;
+    const id = setInterval(() => setCycleIdx(i => (i + 1) % cyclePool.length), 110);
+    return () => clearInterval(id);
+  }, [busy, cyclePool]);
+
+  const onFile = async (f: File) => {
+    lastFile.current = f;
+    setPreview(URL.createObjectURL(f)); setBusy(true); setDone(false); setRes(null); setError(null);
+    try {
+      // Min-spin 900ms so the scanner registers even on a fast backend.
+      const [r] = await Promise.all([apiClient.searchFace(f, 0.35), new Promise(rr => setTimeout(rr, 900))]);
+      setRes(r);
+    } catch (e: any) {
+      // 4xx = the service answered but found no usable face; else it's down.
+      const msg = String(e?.message || '');
+      setError(/4\d\d/.test(msg)
+        ? 'No clear face found in that image — try a closer, sharper photo.'
+        : 'Search failed — could not reach the face recognition service.');
+    } finally { setBusy(false); setDone(true); }
+  };
+
+  return (
+    <Panel title="Search by Face" icon={<SearchIcon className="w-4 h-4 text-amber-300" />}>
+      <div className="flex flex-col sm:flex-row gap-4">
+        <div className="sm:w-64 shrink-0">
+          <div onClick={() => inp.current?.click()} className="aspect-square rounded-xl border-2 border-dashed border-amber-500/30 bg-zinc-900/50 grid place-items-center cursor-pointer hover:border-amber-500/60 overflow-hidden">
+            {preview ? <img src={preview} className="w-full h-full object-cover" alt="" /> : <div className="text-center text-zinc-500"><Plus className="w-8 h-8 mx-auto mb-1 opacity-50" /><p className="text-[11px]">Upload a face</p></div>}
+          </div>
+          <input ref={inp} type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) onFile(f); }} />
+        </div>
+        <div className="flex-1 min-w-0">
+          {busy && (
+            <div className="flex flex-col items-center justify-center py-8 gap-4">
+              <div className="relative h-48 w-48 rounded-2xl overflow-hidden border-2 border-amber-400 bg-zinc-900" style={{ boxShadow: '0 0 30px rgba(245,158,11,0.4)' }}>
+                {cyclePool.length > 0
+                  ? <img key={cycleIdx} src={cyclePool[cycleIdx]} className="w-full h-full object-cover" alt="" />
+                  : <div className="w-full h-full grid place-items-center text-amber-400/60"><Users className="w-12 h-12 animate-pulse" /></div>}
+                <div className="absolute inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-amber-300 to-transparent" style={{ animation: 'frsScan 1.6s ease-in-out infinite' }} />
+              </div>
+              {/* The backend streams the FULL embedded-detection history in 2000-row
+                  batches — the caption reflects the real corpus, not the small
+                  thumbnail pool used for the cycling animation. */}
+              <p className="text-[11px] text-amber-300/80 uppercase tracking-[0.2em]">
+                {(() => { const n = Math.max(totalFaces, pool.length); return n > 0 ? `Scanning ${n.toLocaleString()} face${n === 1 ? '' : 's'} on file…` : 'Scanning…'; })()}
+              </p>
+              <style>{'@keyframes frsScan{0%,100%{top:8%}50%{top:88%}}'}</style>
+            </div>
+          )}
+          {!busy && error && (
+            <div className="border border-red-500/25 bg-red-500/5 rounded-xl p-6 text-center space-y-3">
+              <ShieldAlert className="w-8 h-8 text-red-400 mx-auto" />
+              <p className="text-sm text-red-300">{error}</p>
+              <button onClick={() => lastFile.current && onFile(lastFile.current)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold rounded-lg bg-zinc-800 text-zinc-200 border border-white/10 hover:border-amber-500/50">
+                <RefreshCw className="w-3.5 h-3.5" />Retry
+              </button>
+            </div>
+          )}
+          {!busy && !error && done && res && (res.personMatches?.length || res.detectionMatches?.length) ? (
+            <div className="space-y-3">
+              {res.personMatches?.length > 0 && <div><p className="text-[10px] text-zinc-500 uppercase tracking-wider mb-2">Person Matches</p><div className="grid grid-cols-2 sm:grid-cols-4 gap-3">{res.personMatches.map((m, i) => (
+                <button key={i} type="button" onClick={() => m.faceImageUrl && setZoom({ url: m.faceImageUrl, title: m.personName, sub: `${Math.round(m.similarity * 100)}% match` })} className="text-left rounded-xl border border-emerald-500/20 bg-emerald-500/5 overflow-hidden transition-all hover:border-emerald-500/50 hover:-translate-y-0.5 cursor-zoom-in disabled:cursor-default" disabled={!m.faceImageUrl}><div className="aspect-square bg-zinc-900">{m.faceImageUrl && <img src={m.faceImageUrl} className="w-full h-full object-cover" alt="" />}</div><div className="px-2 py-1.5"><div className="text-[11px] font-semibold text-emerald-300 truncate">{m.personName}</div><div className="text-[9px] text-zinc-500">{Math.round(m.similarity * 100)}% match</div></div></button>))}</div></div>}
+              {res.detectionMatches?.length > 0 && <div><p className="text-[10px] text-zinc-500 uppercase tracking-wider mb-2">Detection Sightings</p><div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-6 gap-3">{res.detectionMatches.map((m, i) => (
+                <button key={i} type="button" onClick={() => m.detection?.faceSnapshotUrl && setZoom({ url: m.detection.faceSnapshotUrl, title: `${Math.round(m.similarity * 100)}% match`, sub: m.detection?.deviceId })} className="text-left rounded-xl border border-white/10 bg-zinc-800/30 overflow-hidden transition-all hover:border-amber-500/50 hover:-translate-y-0.5 cursor-zoom-in disabled:cursor-default" disabled={!m.detection?.faceSnapshotUrl}><div className="aspect-square bg-zinc-900">{m.detection?.faceSnapshotUrl && <img src={m.detection.faceSnapshotUrl} className="w-full h-full object-cover" alt="" />}</div><div className="px-2 py-1.5 text-[9px] flex justify-between"><span className="text-amber-300">{Math.round(m.similarity * 100)}%</span><span className="text-zinc-500">{m.detection?.deviceId}</span></div></button>))}</div></div>}
+            </div>
+          ) : !busy && !error && done ? <Empty msg="No matches found for this face." /> : !busy && !error && <Empty msg="Upload a face image to search past detections + the watchlist." />}
+        </div>
+      </div>
+
+      {/* Click any result to zoom the face large */}
+      {zoom && (
+        <div className="fixed inset-0 z-[95] bg-black/85 backdrop-blur-sm grid place-items-center p-4 md:p-8" onClick={() => setZoom(null)}>
+          <div className="relative max-w-3xl w-full" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-2">
+              <div className="min-w-0"><div className="text-sm font-semibold text-emerald-300 truncate">{zoom.title}</div>{zoom.sub && <div className="text-[11px] text-zinc-400">{zoom.sub}</div>}</div>
+              <button onClick={() => setZoom(null)} className="text-zinc-300 hover:text-white"><X className="w-5 h-5" /></button>
+            </div>
+            <img src={zoom.url} alt="" className="w-full max-h-[80vh] object-contain rounded-xl border border-white/10 bg-black" />
+          </div>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+// ── Add photos to an already-enrolled person (watchlist card camera button) ──
+function AddPhotoButton({ personId, onDone }: { personId: string; onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const inp = useRef<HTMLInputElement>(null);
+  const onFiles = async (files: FileList | null) => {
+    if (!files || !files.length) return;
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      Array.from(files).forEach(f => fd.append('images[]', f, f.name));
+      await apiClient.addPersonEmbeddings(personId, fd);
+      onDone();
+    } catch { /* keep card as-is; user can retry */ } finally { setBusy(false); }
+  };
+  return (
+    <>
+      <button
+        onClick={(e) => { e.stopPropagation(); inp.current?.click(); }}
+        title="Add face photo"
+        className="absolute bottom-1.5 right-1.5 z-10 p-1.5 rounded-lg bg-black/60 border border-amber-500/40 text-amber-300 hover:bg-amber-500/20 transition-colors">
+        {busy ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />}
+      </button>
+      <input ref={inp} type="file" accept="image/*" multiple className="hidden" onChange={e => onFiles(e.target.files)} />
+    </>
+  );
+}
+
+function GenderRing({ m, f }: { m: number; f: number }) {
+  const t = m + f || 1; const mp = (m / t) * 100;
+  return (
+    <div className="relative w-36 h-36 rounded-full shrink-0" style={{ background: `conic-gradient(#38bdf8 0% ${mp}%, #f472b6 ${mp}% 100%)`, boxShadow: '0 0 36px rgba(56,189,248,0.18)' }}>
+      <div className="absolute inset-[18px] rounded-full bg-zinc-950 grid place-items-center"><div className="text-center"><div className="text-3xl font-black text-white tabular-nums">{m + f}</div><div className="text-[9px] text-zinc-500 uppercase tracking-wider">faces</div></div></div>
+    </div>
+  );
+}
+function GenderRow({ label, v, total, color }: { label: string; v: number; total: number; color: string }) {
+  const pct = total ? Math.round((v / total) * 100) : 0;
+  return (
+    <div className="flex items-center gap-2 text-[12px]"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: color }} /><span className="text-zinc-300 flex-1">{label}</span><span className="font-black tabular-nums" style={{ color }}>{v}</span><span className="text-zinc-600 w-10 text-right">{pct}%</span></div>
+  );
+}
+function Field({ label, children }: { label: string; children: React.ReactNode }) { return <label className="block"><span className="text-[10px] text-zinc-500 uppercase tracking-wider">{label}</span><div className="mt-1">{children}</div></label>; }
+function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  return (
+    <div className="fixed inset-0 z-[100] grid place-items-center p-4" style={{ background: 'rgba(0,0,0,0.7)' }} onClick={onClose}>
+      <div className="w-full max-w-lg rounded-2xl border border-amber-500/20 bg-zinc-950 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="px-5 py-3 border-b border-white/5 flex items-center justify-between"><p className="text-sm font-bold text-white">{title}</p><button onClick={onClose} className="text-zinc-500 hover:text-zinc-200"><X className="w-4 h-4" /></button></div>
+        <div className="p-5">{children}</div>
+      </div>
+      <style>{`.modal-in{width:100%;background:#18181b;border:1px solid rgba(var(--brand-accent-rgb),0.2);border-radius:8px;padding:6px 10px;font-size:12px;color:#e4e4e7}.modal-in:focus{outline:none;border-color:rgba(var(--brand-accent-rgb),0.5)}.btn-amber{background:rgba(var(--brand-accent-rgb),0.2);color:#fcd34d;border:1px solid rgba(var(--brand-accent-rgb),0.4);border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700}.btn-ghost{color:#a1a1aa;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:6px 14px;font-size:12px}`}</style>
+    </div>
+  );
+}
+
+export default FRSSurveillance;
