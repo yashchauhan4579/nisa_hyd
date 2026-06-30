@@ -1,0 +1,41 @@
+# MediaMTX / USSStreamcontroller config (template) — VMS module.
+# Lives on the box at /usr/local/uss/USSstreamcontroller.yaml (MediaMTX is a
+# third-party binary, installed separately). Ports: api 9997, rtsp 8554,
+# hls 8888, webrtc 8889. Camera paths are added at runtime by vms_heal.sh or
+# the VMS UI. RTSP credentials below are REDACTED — fill your NVR user:pass.
+#
+logLevel: info
+logDestinations:
+    - stdout
+api: true
+apiAddress: :9997
+rtsp: true
+rtspAddress: :8554
+hls: true
+hlsAddress: :8888
+hlsVariant: fmp4
+hlsSegmentCount: 7
+hlsSegmentDuration: 1s
+webrtc: true
+webrtcAddress: :8889
+paths:
+    camera_00e28214-c292-4781-9cd3-3b36922d14bd:
+        source: rtsp://admin:REDACTED@192.168.1.5:554/cam/realmonitor?channel=1&subtype=1
+        sourceOnDemand: true
+        sourceOnDemandStartTimeout: 10s
+        sourceOnDemandCloseAfter: 10s
+    camera_3e823e38-87c6-4024-bcb6-6d6d17ba15e8:
+        source: rtsp://admin:REDACTED@192.168.1.5:554/cam/realmonitor?channel=4&subtype=1
+        sourceOnDemand: true
+        sourceOnDemandStartTimeout: 10s
+        sourceOnDemandCloseAfter: 10s
+    camera_7ebc3415-6b96-4b9b-b3b0-caa1c5f4d9ce:
+        source: rtsp://admin:REDACTED@192.168.1.5:554/cam/realmonitor?channel=3&subtype=1
+        sourceOnDemand: true
+        sourceOnDemandStartTimeout: 10s
+        sourceOnDemandCloseAfter: 10s
+    camera_e3bbb293-17ef-4883-a7ed-23f6649cf0ab:
+        source: rtsp://admin:REDACTED@192.168.1.5:554/cam/realmonitor?channel=2&subtype=1
+        sourceOnDemand: true
+        sourceOnDemandStartTimeout: 10s
+        sourceOnDemandCloseAfter: 10s
