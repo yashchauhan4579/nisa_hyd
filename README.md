@@ -1,124 +1,72 @@
-# Iris Frontend
+# IRIS @ NISA — Hyderabad
 
-React 19 + TypeScript + Vite dashboard for the Iris AI-powered traffic management platform.
+AI video-intelligence platform deployed for **NISA**, built by **WiredLeap**.
+**IRIS** is the product/platform; this repo holds the operator dashboard plus the
+backend service for every module. It runs on-premise on a compact **MagicBox**
+edge node (Jetson Orin) — no cloud, no data egress.
+
+> Live operator UI: `http://10.10.0.219:1112/`
+
+## Modules
+
+| Module | What it does | Backend (this repo) | Host · Port | UI route |
+|--------|--------------|---------------------|-------------|----------|
+| **Crowd** | People counting, density & footfall | `backend/edge/crowd_runner.py` | 219 → 206 | `/analytics/crowd` |
+| **FRS** | Face detection, recognition, watchlist | `backend/edge/frs_runner.py` | 219 → 206 | `/analytics/frs` |
+| **IRIS Observer** | Vision-language behavioural / risk reads (Qwen2.5-VL) | `backend/observer/` | 206 · 8080 | `/forensics` |
+| **Perimeter** | ROI intrusion detection + auto event clips | `backend/perimeter/perimeter_service.py` | 219 · 7300 | `/perimeter` |
+| **VMS** | Unified multi-NVR live wall, self-healing | `backend/vms/` + MediaMTX | 219/221 · 8888 | `/vms/liveview` |
+| **ITMS · ANPR/VCC** | Number-plate recognition + vehicle counts | `backend/` (violation_pipeline) | 219 · 8003 | `/itms/anpr-vcc` |
+
+## Architecture
+
+```
+        NISA NVRs (RTSP)                 MagicBox edge node (Jetson Orin · 219)
+   10.10.9.254 / 10.10.10.19   ──▶   Crowd · FRS · Perimeter · ANPR/VCC · VMS
+                                              │                 │
+                                              ▼                 ▼
+                                   IRIS dashboard (:1112)   on-site reasoning
+                                   (this repo, Vite/React)   server (206): IRIS
+                                                             Observer / Qwen2.5-VL
+```
+
+The dashboard is a thin client; each module is its own service, reached through
+Vite proxies (see `vite.config.ts`): `/api`→206, `/forensicsapi`→206:8080,
+`/perimeterapi`→219:7300, `/itmsapi`→219:8003, `/hls219` `/hls221`→MediaMTX.
+
+## Run the dashboard (frontend)
+
+```sh
+npm install
+npm run dev          # dev server on :1112
+# or
+npm run build && npm run preview   # production build, served on :1112
+```
+
+## Run the backends
+
+Each module runs as its own process under a tmux session via the launch scripts
+in `backend/scripts/` (`start_nisa.sh`, `start_perim.sh`, `start_frs.sh`,
+`start_crowd.sh`, `start_anpr_api.sh`, `start_anpr_worker.sh`). tmux sessions:
+`nisa · perim · frslive · crowdlive · anprapi · anprworker · vmsheal`.
+
+The **ANPR/VCC** engine is fully self-contained on 219 — see
+[`backend/ANPR_DEPLOY.md`](backend/ANPR_DEPLOY.md) for the venv setup, the
+TensorRT-10.7 runtime trick, and the model-weights layout. Module map:
+[`backend/MODULES.md`](backend/MODULES.md).
+
+## Not in this repo (by design)
+
+- **Model weights / engines** (`*.pt`, `*.engine`, `*.pth`, ~207 MB) — binaries,
+  not source. Place them in `backend/weights/` (see `ANPR_DEPLOY.md`).
+- `node_modules`, `dist`, runtime DB / clips / recordings.
+- **Secrets are redacted** — RTSP/NVR credentials, central-server `AUTH_TOKEN`
+  and JWT `SECRET_KEY` appear as `REDACTED`. Supply your own when deploying.
 
 ## Stack
 
-- **Framework**: React 19 + TypeScript
-- **Build**: Vite 6
-- **Styling**: Tailwind CSS v4 + shadcn/ui
-- **Routing**: React Router v7
-- **Charts**: Custom SVG charts + Recharts
-- **Icons**: Lucide React
+React 19 + TypeScript + Vite · FastAPI · SQLite · YOLOv8 · InsightFace ·
+ByteTrack · CRNN OCR (TensorRT) · Qwen2.5-VL · MediaMTX · Jetson Orin (ARM64).
 
-## Development
-
-```bash
-npm install
-npm run dev       # Dev server on port 1111 (proxies /api → localhost:3001)
-npm run build     # TypeScript check + production build
-npm run lint      # ESLint
-```
-
-## Production
-
-```bash
-npm run build
-sudo systemctl restart iris-frontend.service
-
-# Logs
-journalctl -u iris-frontend.service -f --no-pager
-```
-
-**Environment** (`client/.env`):
-```bash
-VITE_API_Base_URL=http://localhost:3001  # Required for preview/production mode
-```
-
-## Project Structure
-
-```
-src/
-├── components/
-│   ├── nvcc/          # Normal VCC dashboard + components
-│   ├── tvcc/          # Thermal VCC dashboard + components
-│   ├── itms/          # ITMS analytics dashboard
-│   ├── anpr/          # ANPR dashboard
-│   ├── crowd/         # Crowd density dashboard
-│   ├── map/           # Map view
-│   ├── home/          # Home page
-│   ├── cameras/       # Camera live view
-│   ├── workers/       # Edge worker management
-│   ├── violations/    # Traffic violations
-│   ├── layout/        # Sidebar, TopBar
-│   └── ui/            # shadcn/ui components
-├── pages/             # Page-level components (wrapped in RequireAuth)
-├── contexts/          # React contexts (Auth, Theme, DataCache, etc.)
-├── lib/
-│   ├── api.ts         # ApiClient class + all TypeScript interfaces
-│   └── dateUtils.ts   # IST timezone utilities
-└── App.tsx            # Routes + layout
-```
-
-## Key Routes
-
-| Path | Component | Notes |
-|------|-----------|-------|
-| `/` | HomePage | Full screen, no sidebar |
-| `/itms/tvcc` | VCCDashboard (tvcc) | Thermal VCC, no TopBar |
-| `/itms/nvcc` | NVCCDashboard | Normal VCC, no TopBar |
-| `/itms/anpr` | ANPRDashboard | |
-| `/analytics/dashboard` | ITMSDashboard | No TopBar |
-| `/analytics/reports` | ReportsPage | |
-| `/vms/liveview` | CameraView | |
-| `/vms/cameras` | CameraManagementPage | |
-| `/vms/camerahealth` | CameraHealthPage | |
-| `/crowd` | CrowdDashboard | |
-| `/map` | MapView | |
-
-## VCC Dashboard Features
-
-### Multi-Camera View (default)
-- Camera selector with location filter
-- KPI row 1: Total Detections, Busiest Day, Busiest Hour, Dominant Vehicle
-- KPI row 2: Detection Rate, Busiest Camera, System Uptime, Avg Per Camera
-- Vehicle Type Distribution chart
-- Detections Over Time (bar chart, user-selected range)
-- Today's Activity (24-bar hourly IST chart)
-- Top Devices list
-
-### Single Camera View (1 camera selected)
-- Camera filter hidden
-- KPI row 1: Total Detections, Busiest Day, Busiest Hour, Dominant Vehicle
-- KPI row 2: Detection Rate, Peak Hour Count, Avg per Hour, Peak Day Count
-- Vehicle Type Distribution chart
-- Detections Over Time: **24-hour moving window** line chart (30-min IST buckets, auto-refreshes every 5 min)
-- URL state preserved on hard reload (`?cameras=<id>`)
-
-## Data & Timezone
-
-- All timestamps stored in UTC in the database
-- All display times converted to IST (UTC+5:30) using `lib/dateUtils.ts`
-- `toIST(date)` adds 330 minutes to a UTC date
-- `formatUTCHourToIST(utcHour)` converts backend UTC hour to IST range string
-
-## Caching
-
-`DataCacheContext` provides session-based caching (15-min TTL):
-- Caches devices, cameras, workers, VCC stats
-- Prevents duplicate concurrent fetches
-- Cleared on logout
-
-```tsx
-const { devices, getDevices } = useDataCache();
-await getDevices();          // from cache if fresh
-await getDevices(true);      // force refresh
-```
-
-## VCC Stats Aggregation
-
-`aggregateStats(deviceStatsList)` in the dashboard components:
-- Merges per-device stats into a single `VCCStats` object
-- Derives `byDayOfWeek` from `byTime` entries (works for all `groupBy` values)
-- Computes `peakDay` from `byDayOfWeek` after aggregation
-- `VCCDeviceStats` does **not** include `peakDay` — must be derived from `byDayOfWeek`
+---
+© WiredLeap · IRIS — deployed for NISA. On-premise; no cloud dependency.
